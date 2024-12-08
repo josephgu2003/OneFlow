@@ -9,6 +9,7 @@ class _ModelZooConfigs:
         "RAFT": "raft.yaml",
         "RAFT_SMALL": "raft_small.yaml",
         "DICL": "dicl.yaml",
+        "DiT": "dit.yaml",
         "DCVNet": "dcvnet.yaml",
         "PWCNet": "pwcnet.yaml",
         "VCN": "vcn.yaml",

@@ -1,0 +1,41 @@
+_BASE_: "../_base_/chairs_baseline.yaml"
+DATA:
+  BATCH_SIZE: 1
+  NORM_PARAMS: {"use": True, "mean":[127.5, 127.5, 127.5], "std":[127.5, 127.5, 127.5]}
+  APPEND_VALID_MASK: True
+  TRAIN_DATASET:
+    FlyingChairs:
+      CROP: 
+        USE: True
+        SIZE: [256, 256]
+        TYPE: "random"
+  VAL_DATASET:
+    FlyingChairs:
+      PADDING: 1
+      CROP: 
+        USE: True
+        SIZE: [256, 256]
+        TYPE: "center"
+SCHEDULER:
+  USE: True
+  NAME: OneCycleLR
+  PARAMS:
+    max_lr: 0.0004
+    total_steps: 100100
+    pct_start: 0.05
+    cycle_momentum: False
+    anneal_strategy: linear
+CRITERION:
+  CUSTOM: True
+  NAME: SequenceLoss
+  PARAMS: 
+    gamma: 0.8
+    max_flow: 400.0
+EPOCHS: null
+NUM_STEPS: 100100
+LOG_DIR: "./logs"
+CKPT_DIR: "./ckpts"
+LOG_ITERATIONS_INTERVAL: 100
+CKPT_INTERVAL: 20000
+VALIDATE_INTERVAL: 1000
+VALIDATE_ON: metric
