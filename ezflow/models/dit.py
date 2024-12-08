@@ -22,6 +22,20 @@ from .build import MODEL_REGISTRY
 from torch.jit import Final
 from timm.layers import use_fused_attn
 from diffusers.models import AutoencoderKL
+import os
+from torchvision.datasets.utils import download_url
+
+def download_model(model_name='DiT-XL-2-256x256.pt'):
+    """
+    Downloads a pre-trained DiT model from the web.
+    """
+    local_path = f'pretrained_models/{model_name}'
+    if not os.path.isfile(local_path):
+        os.makedirs('pretrained_models', exist_ok=True)
+        web_path = f'https://dl.fbaipublicfiles.com/DiT/models/{model_name}'
+        download_url(web_path, 'pretrained_models')
+    model = torch.load(local_path, map_location=lambda storage, loc: storage)
+    return model
 
 @MODEL_REGISTRY.register()
 class DiT(BaseModule):
@@ -69,6 +83,7 @@ class DiT(BaseModule):
         self.c_embed = nn.Parameter(torch.zeros(1, hidden_size), requires_grad=True)
        
         self.q = nn.Parameter(torch.randn(1, (input_size // patch_size) ** 2, hidden_size), requires_grad=True) 
+        self.out_proj = nn.Linear(3, 2)
         self.initialize_weights()
 
     def initialize_weights(self):
@@ -114,6 +129,10 @@ class DiT(BaseModule):
         self.vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-ema")
         self.vae.eval() # !! keep in eval
         self.vae.requires_grad_(False)
+        
+        state_dict = download_model()
+        errors = self.load_state_dict(state_dict, strict=False)
+        print(errors)
 
     def unpatchify(self, x):
         """
@@ -158,7 +177,8 @@ class DiT(BaseModule):
         x = self.unpatchify(x)[:, :self.in_channels, :, :]                   # (N, out_channels, H, W)
         
         x = self.vae.decode(x / 0.18215).sample
-        return {"flow_preds": x[:, :2, :, :]}
+        x = self.out_proj(x.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
+        return {'flow_preds': x, "flow_upsampled": x}
 
     def forward_with_cfg(self, x, t, y, cfg_scale): # !!!
         """
@@ -447,7 +467,8 @@ class CrossAttention(nn.Module):
 class DecoderBlock(nn.Module):
     def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, **block_kwargs):
         super().__init__()
-        self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.norm1a = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.norm1b = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.attn = CrossAttention(hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs)
         self.attn2 = CrossAttention(hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs)
         self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
@@ -461,8 +482,8 @@ class DecoderBlock(nn.Module):
 
     def forward(self, q, x1, x2, c):
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
-        x1 = gate_msa.unsqueeze(1) * self.attn(q, modulate(self.norm1(x1), shift_msa, scale_msa))
-        x2 = gate_msa.unsqueeze(1) * self.attn2(q, modulate(self.norm1(x2), shift_msa, scale_msa))
+        x1 = gate_msa.unsqueeze(1) * self.attn(q, modulate(self.norm1a(x1), shift_msa, scale_msa))
+        x2 = gate_msa.unsqueeze(1) * self.attn2(q, modulate(self.norm1b(x2), shift_msa, scale_msa))
         q = q + 0.5 * (x1 + x2)
         q = q + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(q), shift_mlp, scale_mlp))
         return q
