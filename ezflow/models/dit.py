@@ -68,7 +68,7 @@ class DiT(BaseModule):
         
         self.c_embed = nn.Parameter(torch.zeros(1, hidden_size), requires_grad=True)
        
-        self.q = nn.Parameter(torch.randn(1, 1, hidden_size), requires_grad=True) 
+        self.q = nn.Parameter(torch.randn(1, (input_size // patch_size) ** 2, hidden_size), requires_grad=True) 
         self.initialize_weights()
 
     def initialize_weights(self):
@@ -112,6 +112,8 @@ class DiT(BaseModule):
         nn.init.constant_(self.final_layer.linear.bias, 0)
         
         self.vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-ema")
+        self.vae.eval() # !! keep in eval
+        self.vae.requires_grad_(False)
 
     def unpatchify(self, x):
         """
@@ -135,27 +137,28 @@ class DiT(BaseModule):
         t: (N,) tensor of diffusion timesteps
         y: (N,) tensor of class labels
         """
-        img1 = self.vae.encode(img1).latent_dist.sample().mul_(0.18215)
-        img2 = self.vae.encode(img2).latent_dist.sample().mul_(0.18215)
+        with torch.no_grad():
+            img1 = self.vae.encode(img1).latent_dist.sample().mul_(0.18215)
+            img2 = self.vae.encode(img2).latent_dist.sample().mul_(0.18215)
         
         x1 = self.x_embedder(img1) + self.pos_embed  # (N, T, D), where T = H * W / patch_size ** 2
         x2 = self.x_embedder(img2) + self.pos_embed  # (N, T, D), where T = H * W / patch_size ** 2
-        c = self.c_embed.repeat(x.size(0), 1) 
+        c = self.c_embed.repeat(x1.size(0), 1) 
         for block in self.blocks:
             x1 = block(x1, c)                      # (N, T, D)
         for block in self.blocks:
             x2 = block(x2, c)                      # (N, T, D)
 
-        q = self.q
+        q = self.q.repeat(x1.size(0), 1, 1)
 
         for block in self.decoder_blocks:
             q = block(q, x1, x2, c)   
  
         x = self.final_layer(q, c)                # (N, T, patch_size ** 2 * out_channels)
-        x = self.unpatchify(x)                   # (N, out_channels, H, W)
+        x = self.unpatchify(x)[:, :self.in_channels, :, :]                   # (N, out_channels, H, W)
         
         x = self.vae.decode(x / 0.18215).sample
-        return x
+        return {"flow_preds": x[:, :2, :, :]}
 
     def forward_with_cfg(self, x, t, y, cfg_scale): # !!!
         """
@@ -423,7 +426,7 @@ class CrossAttention(nn.Module):
         q, k = self.q_norm(q), self.k_norm(k)
 
         if self.fused_attn:
-            x = F.scaled_dot_product_attention(
+            x = torch.nn.functional.scaled_dot_product_attention(
                 q, k, v,
                 dropout_p=self.attn_drop.p if self.training else 0.,
             )
@@ -445,7 +448,7 @@ class DecoderBlock(nn.Module):
     def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, **block_kwargs):
         super().__init__()
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs)
+        self.attn = CrossAttention(hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs)
         self.attn2 = CrossAttention(hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs)
         self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
@@ -458,11 +461,11 @@ class DecoderBlock(nn.Module):
 
     def forward(self, q, x1, x2, c):
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
-        x1 = gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa), q)
-        x2 = gate_msa.unsqueeze(1) * self.attn2(modulate(self.norm1(x2), shift_msa, scale_msa), q)
-        x = x + 0.5 * (x1 + x2)
-        x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))
-        return x
+        x1 = gate_msa.unsqueeze(1) * self.attn(q, modulate(self.norm1(x1), shift_msa, scale_msa))
+        x2 = gate_msa.unsqueeze(1) * self.attn2(q, modulate(self.norm1(x2), shift_msa, scale_msa))
+        q = q + 0.5 * (x1 + x2)
+        q = q + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(q), shift_mlp, scale_mlp))
+        return q
 
 
 
