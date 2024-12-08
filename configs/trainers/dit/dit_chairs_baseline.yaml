@@ -1,6 +1,6 @@
 _BASE_: "../_base_/chairs_baseline.yaml"
 DATA:
-  BATCH_SIZE: 4
+  BATCH_SIZE: 8
   NORM_PARAMS: {"use": True, "mean":[127.5, 127.5, 127.5], "std":[127.5, 127.5, 127.5]}
   APPEND_VALID_MASK: True
   TRAIN_DATASET:
@@ -25,6 +25,7 @@ SCHEDULER:
     pct_start: 0.05
     cycle_momentum: False
     anneal_strategy: linear
+    div_factor: 250
 CRITERION:
   CUSTOM: True
   NAME: MultiScaleLoss

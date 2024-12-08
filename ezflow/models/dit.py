@@ -80,9 +80,9 @@ class DiT(BaseModule):
         ])
         self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
         
-        self.c_embed = nn.Parameter(torch.zeros(1, hidden_size), requires_grad=True)
+        self.c_embed = nn.Parameter(torch.randn(1, hidden_size), requires_grad=True)
        
-        self.q = nn.Parameter(torch.randn(1, (input_size // patch_size) ** 2, hidden_size), requires_grad=True) 
+        self.q = nn.Parameter(torch.randn(1, (input_size // patch_size) ** 2, hidden_size), requires_grad=False) 
         self.out_proj = nn.Linear(3, 2)
         self.initialize_weights()
 
@@ -99,6 +99,8 @@ class DiT(BaseModule):
         pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** 0.5))
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
+        pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** 0.5))
+        self.q.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
         w = self.x_embedder.proj.weight.data
         nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
@@ -116,9 +118,9 @@ class DiT(BaseModule):
             nn.init.constant_(block.adaLN_modulation[-1].weight, 0)
             nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
 
-        for block in self.decoder_blocks:
-            nn.init.constant_(block.adaLN_modulation[-1].weight, 0)
-            nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
+      #  for block in self.decoder_blocks:
+       #     nn.init.constant_(block.adaLN_modulation[-1].weight, 0.5)
+        #    nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
 
         # Zero-out output layers:
         nn.init.constant_(self.final_layer.adaLN_modulation[-1].weight, 0)
@@ -157,24 +159,29 @@ class DiT(BaseModule):
         y: (N,) tensor of class labels
         """
         with torch.no_grad():
-            img1 = self.vae.encode(img1).latent_dist.sample().mul_(0.18215)
-            img2 = self.vae.encode(img2).latent_dist.sample().mul_(0.18215)
+            both_img = torch.concat((img1, img2), dim=0)
+            both_img = self.vae.encode(both_img).latent_dist.sample().mul_(0.18215)
         
-        x1 = self.x_embedder(img1) + self.pos_embed  # (N, T, D), where T = H * W / patch_size ** 2
-        x2 = self.x_embedder(img2) + self.pos_embed  # (N, T, D), where T = H * W / patch_size ** 2
-        c = self.c_embed.repeat(x1.size(0), 1) 
+        both_img = self.x_embedder(both_img) + self.pos_embed  # (N, T, D), where T = H * W / patch_size ** 2
+        
+        c = self.c_embed.repeat(img1.size(0) * 2, 1) 
         for block in self.blocks:
-            x1 = block(x1, c)                      # (N, T, D)
-        for block in self.blocks:
-            x2 = block(x2, c)                      # (N, T, D)
-
+            both_img = block(both_img, c)                      # (N, T, D)
+        x1x2 = torch.chunk(both_img, 2, dim=0)
+        x1 = x1x2[0]
+        x2 = x1x2[1]
+        
+        c = self.c_embed.repeat(img1.size(0), 1)
+        
         q = self.q.repeat(x1.size(0), 1, 1)
 
         for block in self.decoder_blocks:
             q = block(q, x1, x2, c)   
+            # q = block(x1, x1, x2, c)   
  
         x = self.final_layer(q, c)                # (N, T, patch_size ** 2 * out_channels)
-        x = self.unpatchify(x)[:, :self.in_channels, :, :]                   # (N, out_channels, H, W)
+   #     x = self.unpatchify(x)[:, :self.in_channels, :, :]                   # (N, out_channels, H, W)
+        x = self.unpatchify(x)[:, self.in_channels:, :, :]                   # (N, out_channels, H, W)
         
         x = self.vae.decode(x / 0.18215).sample
         x = self.out_proj(x.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
@@ -482,9 +489,10 @@ class DecoderBlock(nn.Module):
 
     def forward(self, q, x1, x2, c):
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
-        x1 = gate_msa.unsqueeze(1) * self.attn(q, modulate(self.norm1a(x1), shift_msa, scale_msa))
+       # x1 = gate_msa.unsqueeze(1) * self.attn(q, modulate(self.norm1a(x1), shift_msa, scale_msa))
         x2 = gate_msa.unsqueeze(1) * self.attn2(q, modulate(self.norm1b(x2), shift_msa, scale_msa))
-        q = q + 0.5 * (x1 + x2)
+       # q = q + 0.5 * (x1 + x2)
+        q = q + x1
         q = q + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(q), shift_mlp, scale_mlp))
         return q
 
