@@ -785,6 +785,7 @@ class DistributedTrainer(BaseTrainer):
         self.model = DDP(
             self.model.cuda(rank),
             device_ids=[rank],
+            find_unused_parameters=True,
         )
 
         self.model = self.model.to(self.device)

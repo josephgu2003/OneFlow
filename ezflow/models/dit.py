@@ -52,7 +52,7 @@ class DiT(BaseModule):
         patch_size=2,
         in_channels=4,
         hidden_size=1152,
-        depth=16,
+        depth=24,
         num_heads=16,
         mlp_ratio=4.0,
         class_dropout_prob=0.1,
@@ -78,7 +78,7 @@ class DiT(BaseModule):
         self.decoder_blocks = nn.ModuleList([
             DecoderBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio) for _ in range(4)
         ])
-        self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
+        self.final_layer_flow = FinalLayer(hidden_size, patch_size, self.out_channels)
         
         self.c_embed = nn.Parameter(torch.randn(1, hidden_size), requires_grad=True)
        
@@ -124,10 +124,10 @@ class DiT(BaseModule):
         #    nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
 
         # Zero-out output layers:
-        nn.init.constant_(self.final_layer.adaLN_modulation[-1].weight, 0)
-        nn.init.constant_(self.final_layer.adaLN_modulation[-1].bias, 0)
-        nn.init.constant_(self.final_layer.linear.weight, 0)
-        nn.init.constant_(self.final_layer.linear.bias, 0)
+        nn.init.constant_(self.final_layer_flow.adaLN_modulation[-1].weight, 0)
+        nn.init.constant_(self.final_layer_flow.adaLN_modulation[-1].bias, 0)
+        nn.init.constant_(self.final_layer_flow.linear.weight, 0)
+        nn.init.constant_(self.final_layer_flow.linear.bias, 0)
         
         self.vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-ema")
         self.vae.eval() # !! keep in eval
@@ -159,6 +159,7 @@ class DiT(BaseModule):
         t: (N,) tensor of diffusion timesteps
         y: (N,) tensor of class labels
         """
+        self.vae.eval()
         with torch.no_grad():
             both_img = torch.concat((img1, img2), dim=0)
             both_img = self.vae.encode(both_img).latent_dist.mean.mul_(0.18215).clone()
@@ -184,8 +185,8 @@ class DiT(BaseModule):
             q = block(q, x1, x2, c)   
             # q = block(x1, x1, x2, c)   
  
-        x = self.final_layer(q, c)                # (N, T, patch_size ** 2 * out_channels)
-   #     x = self.unpatchify(x)[:, :self.in_channels, :, :]                   # (N, out_channels, H, W)
+        x = self.final_layer_flow(q, c)                # (N, T, patch_size ** 2 * out_channels)
+    #    x = self.unpatchify(x)[:, :self.in_channels, :, :]                   # (N, out_channels, H, W)
         x = self.unpatchify(x)[:, self.in_channels:, :, :]                   # (N, out_channels, H, W)
         
         x = self.vae.decode(x / 0.18215).sample
@@ -517,8 +518,8 @@ class FinalLayer(nn.Module):
         )
 
     def forward(self, x, c):
-        shift, scale = self.adaLN_modulation(c).chunk(2, dim=1)
-        x = modulate(self.norm_final(x), shift, scale)
+     #   shift, scale = self.adaLN_modulation(c).chunk(2, dim=1)
+      #  x = modulate(self.norm_final(x), shift, scale)
         x = self.linear(x)
         return x
 
