@@ -52,7 +52,7 @@ class DiT(BaseModule):
         patch_size=2,
         in_channels=4,
         hidden_size=1152,
-        depth=28,
+        depth=16,
         num_heads=16,
         mlp_ratio=4.0,
         class_dropout_prob=0.1,
@@ -85,6 +85,7 @@ class DiT(BaseModule):
         self.q = nn.Parameter(torch.randn(1, (input_size // patch_size) ** 2, hidden_size), requires_grad=False) 
         self.out_proj = nn.Linear(3, 2)
         self.initialize_weights()
+
 
     def initialize_weights(self):
         # Initialize transformer layers:
@@ -160,18 +161,22 @@ class DiT(BaseModule):
         """
         with torch.no_grad():
             both_img = torch.concat((img1, img2), dim=0)
-            both_img = self.vae.encode(both_img).latent_dist.sample().mul_(0.18215)
+            both_img = self.vae.encode(both_img).latent_dist.mean.mul_(0.18215).clone()
         
         both_img = self.x_embedder(both_img) + self.pos_embed  # (N, T, D), where T = H * W / patch_size ** 2
         
-        c = self.c_embed.repeat(img1.size(0) * 2, 1) 
+        c = self.y_embedder.embedding_table.weight[-1:, :].repeat(img1.size(0) * 2, 1) 
+        t = self.t_embedder(torch.ones_like(c[:, 0]))
+        c = c + t        
         for block in self.blocks:
             both_img = block(both_img, c)                      # (N, T, D)
         x1x2 = torch.chunk(both_img, 2, dim=0)
         x1 = x1x2[0]
         x2 = x1x2[1]
         
-        c = self.c_embed.repeat(img1.size(0), 1)
+        c = self.y_embedder.embedding_table.weight[-1:, :].repeat(img1.size(0), 1) 
+        t = self.t_embedder(torch.ones_like(c[:, 0]))
+        c = c + t        
         
         q = self.q.repeat(x1.size(0), 1, 1)
 
@@ -488,12 +493,12 @@ class DecoderBlock(nn.Module):
         )
 
     def forward(self, q, x1, x2, c):
-        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
+    #    shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
        # x1 = gate_msa.unsqueeze(1) * self.attn(q, modulate(self.norm1a(x1), shift_msa, scale_msa))
-        x2 = gate_msa.unsqueeze(1) * self.attn2(q, modulate(self.norm1b(x2), shift_msa, scale_msa))
+        x2 = self.attn2(q, self.norm1b(x2))
        # q = q + 0.5 * (x1 + x2)
-        q = q + x1
-        q = q + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(q), shift_mlp, scale_mlp))
+        q = q + x2
+        q = q + self.mlp(self.norm2(q))
         return q
 
 

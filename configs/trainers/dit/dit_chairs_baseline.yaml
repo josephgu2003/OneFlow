@@ -1,6 +1,6 @@
 _BASE_: "../_base_/chairs_baseline.yaml"
 DATA:
-  BATCH_SIZE: 8
+  BATCH_SIZE: 16
   NORM_PARAMS: {"use": True, "mean":[127.5, 127.5, 127.5], "std":[127.5, 127.5, 127.5]}
   APPEND_VALID_MASK: True
   TRAIN_DATASET:
@@ -22,7 +22,7 @@ SCHEDULER:
   PARAMS:
     max_lr: 0.0004
     total_steps: 100100
-    pct_start: 0.05
+    pct_start: 0.001
     cycle_momentum: False
     anneal_strategy: linear
     div_factor: 250
@@ -39,6 +39,6 @@ NUM_STEPS: 100100
 LOG_DIR: "./logs"
 CKPT_DIR: "./ckpts"
 LOG_ITERATIONS_INTERVAL: 100
-CKPT_INTERVAL: 20000
+CKPT_INTERVAL: 5000
 VALIDATE_INTERVAL: 1000
 VALIDATE_ON: metric
