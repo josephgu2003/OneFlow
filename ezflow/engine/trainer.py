@@ -274,7 +274,17 @@ class BaseTrainer:
             start_time = time.time()
 
         with autocast(enabled=self.cfg.MIXED_PRECISION):
-            output = self.model(img1, img2)
+            with torch.no_grad():
+                self.model.module.vae.eval()
+                both_img = torch.concat((img1, img2), dim=0)
+                both_img = torch.nn.functional.interpolate(both_img, size=(512, 512), mode='bilinear')
+                both_img = self.model.module.vae.encode(both_img).latent_dist.sample().mul_(0.18215)
+
+            output = self.model(both_img)
+
+            with torch.no_grad():
+                target['flow_gt'] = self.model.module.vae.encode(torch.concat((target['flow_gt'], torch.zeros_like(target['flow_gt'][:, :1, :, :])), dim=1)).latent_dist.sample().mul_(0.18215)
+
             loss = self.loss_fn(**output, **target, **kwargs)
 
             del output
@@ -330,17 +340,25 @@ class BaseTrainer:
                 inp, target = self._to_device(inp, target)
                 img1, img2 = inp
 
+#
+                both_img = torch.concat((img1, img2), dim=0)
+                both_img = torch.nn.functional.interpolate(both_img, size=(512, 512), mode='bilinear')
+                both_img = self.model.module.vae.encode(both_img).latent_dist.sample().mul_(0.18215)
+
                 if self.model_parallel:
-                    output = self.model.module(img1, img2)
+                    output = self.model.module(both_img)
                 else:
-                    output = self.model(img1, img2)
+                    output = self.model(both_img)
+
+                target['flow_gt'] = self.model.module.vae.encode(torch.concat((target['flow_gt'], torch.zeros_like(target['flow_gt'][:, :1, :, :])), dim=1)).latent_dist.sample().mul_(0.18215)
+#
 
                 loss = self.loss_fn(**output, **target, **kwargs)
 
                 loss_meter.update(loss.item())
 
-                metric = self._calculate_metric(output, target)
-                metric_meter.update(metric)
+                # metric = self._calculate_metric(output, target)
+                metric_meter.update(loss.item())
 
                 del output
 
@@ -390,7 +408,7 @@ class BaseTrainer:
             consolidated_save_dict,
             os.path.join(
                 self.cfg.CKPT_DIR,
-                self.model_name + "_" + ckpt_type + str(ckpt_number) + ".pth",
+                self.model_name + "_" + ckpt_type + "_last.pth",
             ),
         )
 
