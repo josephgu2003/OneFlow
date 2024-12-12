@@ -59,16 +59,17 @@ class DiT(BaseModule):
         num_classes=1000,
         learn_sigma=True,
     ):
+        self.proj = nn.Linear(384, hidden_size)
         self.learn_sigma = learn_sigma
         self.in_channels = in_channels
-        self.out_channels = 2
+        self.out_channels = 3
         self.patch_size = patch_size
         self.num_heads = num_heads
 
         self.x_embedder_new = PatchEmbed(input_size, patch_size, in_channels, hidden_size, bias=True)
         self.t_embedder = TimestepEmbedder(hidden_size)
         self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
-        num_patches = self.x_embedder_new.num_patches
+        num_patches = 32*32
         # Will use fixed sin-cos embedding:
         self.pos_embed_new = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
 
@@ -107,11 +108,11 @@ class DiT(BaseModule):
         self.apply(_basic_init)
 
         # Initialize (and freeze) pos_embed by sin-cos embedding:
-        pos_embed = get_2d_sincos_pos_embed(self.pos_embed_new.shape[-1], int(self.x_embedder_new.num_patches ** 0.5))
+        pos_embed = get_2d_sincos_pos_embed(self.pos_embed_new.shape[-1], 32)
         self.pos_embed_new.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
         self.q.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
-        pos_embed = get_2d_sincos_pos_embed(self.pos_embed_new.shape[-1], int(self.x_embedder_new.num_patches ** 0.5))
+        pos_embed = get_2d_sincos_pos_embed(self.pos_embed_new.shape[-1], 32)
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
         w = self.x_embedder_new.proj.weight.data
         nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
@@ -136,6 +137,8 @@ class DiT(BaseModule):
         state_dict = download_model()
         errors = self.load_state_dict(state_dict, strict=False)
         print(errors)
+        
+        self.vits16 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14_reg')
 
     def unpatchify(self, x):
         """
@@ -151,8 +154,82 @@ class DiT(BaseModule):
         x = torch.einsum('nhwpqc->nchpwq', x)
         imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
         return imgs
+    
+    def forward_dit(self, both_img):
+        """
+        Forward pass of DiT.
+        x: (N, C, H, W) tensor of spatial inputs (images or latent representations of images)
+        t: (N,) tensor of diffusion timesteps
+        y: (N,) tensor of class labels
+        """
+        x = self.vits16.prepare_tokens_with_masks(both_img, None)
+        for blk in self.vits16.blocks:
+            x = blk(x)
+        x = self.vits16.norm(x)
+        x = x[:, 1 + 4:]
+   
+        for block in self.blocks:
+            both_img = block(both_img, c)                      # (N, T, D)
+
+        x1x2 = torch.chunk(both_img, 2, dim=0)
+        x1 = x1x2[0] + self.pos_embed_new
+        x2 = x1x2[1] + self.pos_embed_new
+        
+        c = self.y_embedder.embedding_table.weight[-1:, :].repeat(both_img.size(0) // 2, 1) 
+        t = self.t_embedder(torch.ones_like(c[:, 0]) + 500)
+        c = c + t        
+        
+        #q = self.q.repeat(x1.size(0), 1, 1)
+        q = x1
+
+        for block in self.decoder_blocks:
+            q = block(q, x1, x2, c)   
+            # q = block(x1, x1, x2, c)   
+ 
+        x = self.final_layer_flow(q, c)                # (N, T, patch_size ** 2 * out_channels)
+    #    x = self.unpatchify(x)[:, :self.in_channels, :, :]                   # (N, out_channels, H, W)
+        # x = self.unpatchify(x)[:, self.in_channels:, :, :]                   # (N, out_channels, H, W)
+        x = self.unpatchify(x)
+        x = torch.nn.functional.interpolate(x, size=(256, 256), mode='bilinear') 
+        return {'flow_preds': x, "flow_upsampled": x}
+
 
     def forward(self, both_img):
+        """
+        Forward pass of DiT.
+        x: (N, C, H, W) tensor of spatial inputs (images or latent representations of images)
+        t: (N,) tensor of diffusion timesteps
+        y: (N,) tensor of class labels
+        """
+        x = self.vits16.prepare_tokens_with_masks(both_img, None)
+        for blk in self.vits16.blocks:
+            x = blk(x)
+        x = self.vits16.norm(x)
+        both_img = self.proj(x[:, 1 + 4:])
+   
+        x1x2 = torch.chunk(both_img, 2, dim=0)
+        x1 = x1x2[0] + self.pos_embed_new
+        x2 = x1x2[1] + self.pos_embed_new
+        
+        c = self.y_embedder.embedding_table.weight[-1:, :].repeat(both_img.size(0) // 2, 1) 
+        t = self.t_embedder(torch.ones_like(c[:, 0]) + 500)
+        c = c + t        
+        
+        #q = self.q.repeat(x1.size(0), 1, 1)
+        q = x1
+
+        for block in self.decoder_blocks:
+            q = block(q, x1, x2, c)   
+            # q = block(x1, x1, x2, c)   
+ 
+        x = self.final_layer_flow(q, c)                # (N, T, patch_size ** 2 * out_channels)
+    #    x = self.unpatchify(x)[:, :self.in_channels, :, :]                   # (N, out_channels, H, W)
+        # x = self.unpatchify(x)[:, self.in_channels:, :, :]                   # (N, out_channels, H, W)
+        x = self.unpatchify(x)
+        x = torch.nn.functional.interpolate(x, size=(256, 256), mode='bilinear') 
+        return {'flow_preds': x, "flow_upsampled": x}
+
+    def forward_dit(self, both_img):
         """
         Forward pass of DiT.
         x: (N, C, H, W) tensor of spatial inputs (images or latent representations of images)
@@ -483,17 +560,35 @@ class DecoderBlock(nn.Module):
         super().__init__()
         self.attn = CrossAttention(hidden_size, num_heads=num_heads, qkv_bias=False, proj_drop=0.3, **block_kwargs)
         self.attn2 = CrossAttention(hidden_size, num_heads=num_heads, qkv_bias=False, proj_drop=0.3, **block_kwargs)
+        
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
         approx_gelu = lambda: nn.GELU(approximate="tanh")
         self.mlp = Mlp(in_features=hidden_size, hidden_features=mlp_hidden_dim, act_layer=approx_gelu, drop=0.3, bias=True)
+        self.norm1 = torch.nn.LayerNorm(hidden_size)
+        self.norm2 = torch.nn.LayerNorm(hidden_size)
+        self.norm3 = torch.nn.LayerNorm(hidden_size)
 
     def forward(self, q, x1, x2, c):
     #    shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
-        x1 = self.attn(q, x1)
+    
+        # reinject
         q = q + x1
+        
+        # self attn
+        x1 = self.attn(q, q)
+        q = q + x1
+        
+        q = self.norm1(q)
+        
+        # cross attn
         x2 = self.attn2(q, x2)
         q = q + x2
+        
+        q = self.norm2(q)
+        
+        # mlp
         q = q + self.mlp(q)
+        q = self.norm3(q)
         # add gelu here?
         return q
 

@@ -6,8 +6,10 @@ DATA:
   APPEND_VALID_MASK: True
   TRAIN_DATASET:
     FlyingChairs:
+      AUGMENTATION:
+        USE: False
       CROP: 
-        USE: True
+        USE: False
         SIZE: [256, 256]
         TYPE: "random"
   VAL_DATASET:
@@ -29,7 +31,7 @@ SCHEDULER:
     div_factor: 250
 CRITERION:
   CUSTOM: True
-  NAME: MultiScaleLoss
+  NAME: MultiScaleLossUncertain
   PARAMS:
     norm: "l2" 
     weights: [1.0]
