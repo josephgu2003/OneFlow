@@ -49,10 +49,10 @@ class DiT(BaseModule):
     def __my_init__(
         self,
         input_size=64,
-        patch_size=2,
+        patch_size=1,
         in_channels=4,
         hidden_size=1152,
-        depth=28,
+        depth=6,
         num_heads=16,
         mlp_ratio=4.0,
         class_dropout_prob=0.1,
@@ -61,31 +61,31 @@ class DiT(BaseModule):
     ):
         self.learn_sigma = learn_sigma
         self.in_channels = in_channels
-        self.out_channels = in_channels * 2 if learn_sigma else in_channels
+        self.out_channels = 2
         self.patch_size = patch_size
         self.num_heads = num_heads
 
-        self.x_embedder = PatchEmbed(input_size, patch_size, in_channels, hidden_size, bias=True)
+        self.x_embedder_new = PatchEmbed(input_size, patch_size, in_channels, hidden_size, bias=True)
         self.t_embedder = TimestepEmbedder(hidden_size)
         self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
-        num_patches = self.x_embedder.num_patches
+        num_patches = self.x_embedder_new.num_patches
         # Will use fixed sin-cos embedding:
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
+        self.pos_embed_new = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
 
         self.blocks = nn.ModuleList([
             DiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio) for _ in range(depth)
         ])
         self.decoder_blocks = nn.ModuleList([
-            DecoderBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio) for _ in range(1)
+            DecoderBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio) for _ in range(2)
         ])
         self.final_layer_flow = FinalLayer(hidden_size, patch_size, self.out_channels)
         self.q = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
         self.initialize_weights()
 
-        freeze_layers = [self.x_embedder, self.y_embedder, self.t_embedder]
-        for i in range(len(self.blocks)):
-            block = self.blocks[i]
-            freeze_layers.append(block)
+        freeze_layers = [self.x_embedder_new, self.y_embedder, self.t_embedder]
+      #  for i in range(len(self.blocks)):
+       #     block = self.blocks[i]
+        #    freeze_layers.append(block)
         
         for layer in freeze_layers:
             if isinstance(layer, nn.Module):
@@ -101,21 +101,21 @@ class DiT(BaseModule):
         # Initialize transformer layers:
         def _basic_init(module):
             if isinstance(module, nn.Linear):
-                torch.nn.init.xavier_uniform_(module.weight)
+                torch.nn.init.orthogonal_(module.weight, 0.1)
                 if module.bias is not None:
                     nn.init.constant_(module.bias, 0)
         self.apply(_basic_init)
 
         # Initialize (and freeze) pos_embed by sin-cos embedding:
-        pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** 0.5))
-        self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
+        pos_embed = get_2d_sincos_pos_embed(self.pos_embed_new.shape[-1], int(self.x_embedder_new.num_patches ** 0.5))
+        self.pos_embed_new.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
         self.q.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
-        pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** 0.5))
+        pos_embed = get_2d_sincos_pos_embed(self.pos_embed_new.shape[-1], int(self.x_embedder_new.num_patches ** 0.5))
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
-        w = self.x_embedder.proj.weight.data
+        w = self.x_embedder_new.proj.weight.data
         nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
-        nn.init.constant_(self.x_embedder.proj.bias, 0)
+        nn.init.constant_(self.x_embedder_new.proj.bias, 0)
 
         # Initialize label embedding table:
         nn.init.normal_(self.y_embedder.embedding_table.weight, std=0.02)
@@ -128,16 +128,6 @@ class DiT(BaseModule):
         for block in self.blocks:
             nn.init.constant_(block.adaLN_modulation[-1].weight, 0)
             nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
-
-      #  for block in self.decoder_blocks:
-       #     nn.init.constant_(block.adaLN_modulation[-1].weight, 0.5)
-        #    nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
-
-        # Zero-out output layers:
-        nn.init.constant_(self.final_layer_flow.adaLN_modulation[-1].weight, 0)
-        nn.init.constant_(self.final_layer_flow.adaLN_modulation[-1].bias, 0)
-        nn.init.constant_(self.final_layer_flow.linear.weight, 0)
-        nn.init.constant_(self.final_layer_flow.linear.bias, 0)
         
         self.vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-ema")
         self.vae.eval() # !! keep in eval
@@ -153,7 +143,7 @@ class DiT(BaseModule):
         imgs: (N, H, W, C)
         """
         c = self.out_channels
-        p = self.x_embedder.patch_size[0]
+        p = self.x_embedder_new.patch_size[0]
         h = w = int(x.shape[1] ** 0.5)
         assert h * w == x.shape[1]
 
@@ -170,24 +160,25 @@ class DiT(BaseModule):
         y: (N,) tensor of class labels
         """
         
-        both_img = self.x_embedder(both_img) + self.pos_embed  # (N, T, D), where T = H * W / patch_size ** 2
+        both_img = self.x_embedder_new(both_img) + self.pos_embed_new  # (N, T, D), where T = H * W / patch_size ** 2
         
         c = self.y_embedder.embedding_table.weight[-1:, :].repeat(both_img.size(0), 1) 
-        t = self.t_embedder(torch.ones_like(c[:, 0]))
+        t = self.t_embedder(torch.ones_like(c[:, 0]) + 500)
         c = c + t        
         
         for block in self.blocks:
             both_img = block(both_img, c)                      # (N, T, D)
 
         x1x2 = torch.chunk(both_img, 2, dim=0)
-        x1 = x1x2[0]
-        x2 = x1x2[1]
+        x1 = x1x2[0] + self.pos_embed_new
+        x2 = x1x2[1] + self.pos_embed_new
         
         c = self.y_embedder.embedding_table.weight[-1:, :].repeat(both_img.size(0) // 2, 1) 
-        t = self.t_embedder(torch.ones_like(c[:, 0]))
+        t = self.t_embedder(torch.ones_like(c[:, 0]) + 500)
         c = c + t        
         
-        q = self.q.repeat(x1.size(0), 1, 1)
+        #q = self.q.repeat(x1.size(0), 1, 1)
+        q = x1
 
         for block in self.decoder_blocks:
             q = block(q, x1, x2, c)   
@@ -195,8 +186,9 @@ class DiT(BaseModule):
  
         x = self.final_layer_flow(q, c)                # (N, T, patch_size ** 2 * out_channels)
     #    x = self.unpatchify(x)[:, :self.in_channels, :, :]                   # (N, out_channels, H, W)
-        x = self.unpatchify(x)[:, self.in_channels:, :, :]                   # (N, out_channels, H, W)
-        
+        # x = self.unpatchify(x)[:, self.in_channels:, :, :]                   # (N, out_channels, H, W)
+        x = self.unpatchify(x)
+        x = torch.nn.functional.interpolate(x, size=(256, 256), mode='bilinear') 
         return {'flow_preds': x, "flow_upsampled": x}
 
     def forward_with_cfg(self, x, t, y, cfg_scale): # !!!
@@ -452,7 +444,7 @@ class CrossAttention(nn.Module):
         self.q_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
         self.k_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
         self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, dim)
+        self.proj = nn.Linear(dim, dim, bias=False)
         self.proj_drop = nn.Dropout(proj_drop)
 
     def forward(self, q: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
@@ -462,7 +454,10 @@ class CrossAttention(nn.Module):
 
         q = q.squeeze(0)
         k, v = kv.unbind(0)
-        q, k = self.q_norm(q), self.k_norm(k)
+       
+        q = torch.nn.functional.normalize(q, p=2, dim=-1)
+        k = torch.nn.functional.normalize(k, p=2, dim=-1) 
+        #q, k = self.q_norm(q), self.k_norm(k)
 
         if self.fused_attn:
             x = torch.nn.functional.scaled_dot_product_attention(
@@ -486,19 +481,20 @@ class CrossAttention(nn.Module):
 class DecoderBlock(nn.Module):
     def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, **block_kwargs):
         super().__init__()
-        self.attn = CrossAttention(hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs)
-        self.attn2 = CrossAttention(hidden_size, num_heads=num_heads, qkv_bias=True, **block_kwargs)
+        self.attn = CrossAttention(hidden_size, num_heads=num_heads, qkv_bias=False, proj_drop=0.3, **block_kwargs)
+        self.attn2 = CrossAttention(hidden_size, num_heads=num_heads, qkv_bias=False, proj_drop=0.3, **block_kwargs)
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
         approx_gelu = lambda: nn.GELU(approximate="tanh")
-        self.mlp = Mlp(in_features=hidden_size, hidden_features=mlp_hidden_dim, act_layer=approx_gelu, drop=0)
+        self.mlp = Mlp(in_features=hidden_size, hidden_features=mlp_hidden_dim, act_layer=approx_gelu, drop=0.3, bias=True)
 
     def forward(self, q, x1, x2, c):
     #    shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
-        x1 = self.attn2(q, x1)
+        x1 = self.attn(q, x1)
+        q = q + x1
         x2 = self.attn2(q, x2)
-       # q = q + 0.5 * (x1 + x2)
-        q = q + 0.5 * (x1 + x2)
+        q = q + x2
         q = q + self.mlp(q)
+        # add gelu here?
         return q
 
 
@@ -509,12 +505,7 @@ class FinalLayer(nn.Module):
     """
     def __init__(self, hidden_size, patch_size, out_channels):
         super().__init__()
-        self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.linear = nn.Linear(hidden_size, patch_size * patch_size * out_channels, bias=True)
-        self.adaLN_modulation = nn.Sequential(
-            nn.SiLU(),
-            nn.Linear(hidden_size, 2 * hidden_size, bias=True)
-        )
 
     def forward(self, x, c):
      #   shift, scale = self.adaLN_modulation(c).chunk(2, dim=1)

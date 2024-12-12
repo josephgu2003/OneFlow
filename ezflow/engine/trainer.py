@@ -100,6 +100,10 @@ class BaseTrainer:
                 optimizer = opt(self.model.parameters(), lr=self.cfg.OPTIMIZER.LR)
 
             print(f"Optimizer: {self.cfg.OPTIMIZER.NAME} is initialized!")
+            
+            for param_group in optimizer.param_groups:
+                if 'weight_decay' in param_group:
+                    print(f"Weight Decay: {param_group['weight_decay']}")
 
         if scheduler is None and self.scheduler is None:
 
@@ -266,35 +270,47 @@ class BaseTrainer:
         if self._is_main_process():
             self.writer.close()
 
-    def _run_step(self, inp, target, **kwargs):
+    def _run_step(self, inp, target, current_iter, **kwargs):
         inp, target = self._to_device(inp, target)
         img1, img2 = inp
 
         if self._is_main_process():
             start_time = time.time()
 
-        with autocast(enabled=self.cfg.MIXED_PRECISION):
+        with torch.amp.autocast(device_type='cuda:0', enabled=self.cfg.MIXED_PRECISION):
             with torch.no_grad():
-                self.model.module.vae.eval()
+                self.model.vae.eval()
                 both_img = torch.concat((img1, img2), dim=0)
                 both_img = torch.nn.functional.interpolate(both_img, size=(512, 512), mode='bilinear')
-                both_img = self.model.module.vae.encode(both_img).latent_dist.sample().mul_(0.18215)
+                both_img = self.model.vae.encode(both_img).latent_dist.mean.clone().mul_(0.18215)
 
             output = self.model(both_img)
 
-            with torch.no_grad():
-                target['flow_gt'] = self.model.module.vae.encode(torch.concat((target['flow_gt'], torch.zeros_like(target['flow_gt'][:, :1, :, :])), dim=1)).latent_dist.sample().mul_(0.18215)
+#            with torch.no_grad():
+  #              target['flow_gt'] = self.model.vae.encode(0.025 * torch.concat((target['flow_gt'], torch.zeros_like(target['flow_gt'][:, :1, :, :])), dim=1)).latent_dist.mean.clone().mul_(0.18215)
 
             loss = self.loss_fn(**output, **target, **kwargs)
 
-            del output
+          #  del output
 
         self.optimizer.zero_grad()
         self.scaler.scale(loss).backward()
         self.scaler.unscale_(self.optimizer)
 
+        if current_iter % self.cfg.LOG_ITERATIONS_INTERVAL == 0 and self._is_main_process():
+            #for tag, parm in self.model.named_parameters():
+             #   if parm.grad is not None:
+            #        self.writer.add_histogram(tag + "_weight", parm.data.cpu().numpy(), current_iter)
+             #       self.writer.add_histogram(tag, parm.grad.data.cpu().numpy(), current_iter)
+            self.writer.add_scalar('lr', self.optimizer.param_groups[0]['lr'], current_iter)
+            import torchshow 
+            torchshow.save(target['flow_gt'][0])
+            torchshow.save(output['flow_preds'][0])
+     
         if self.cfg.GRAD_CLIP.USE is True:
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.GRAD_CLIP.VALUE)
+            grad = nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.GRAD_CLIP.VALUE)
+            if self._is_main_process():
+                self.writer.add_scalar('grad_norm', grad.item(), current_iter)
 
         self.scaler.step(self.optimizer)
 
@@ -321,7 +337,7 @@ class BaseTrainer:
     def _log_step(self, iteration, total_iters, loss_meter):
         if iteration % self.cfg.LOG_ITERATIONS_INTERVAL == 0:
             print(
-                f"[{iteration} / {total_iters}] iterations, batch training loss: {loss_meter.val}"
+                f"[{iteration} / {total_iters}] iterations, batch training loss: {loss_meter.val}", flush=True
             )
             if self._is_main_process():
                 self.writer.add_scalar(
@@ -343,14 +359,14 @@ class BaseTrainer:
 #
                 both_img = torch.concat((img1, img2), dim=0)
                 both_img = torch.nn.functional.interpolate(both_img, size=(512, 512), mode='bilinear')
-                both_img = self.model.module.vae.encode(both_img).latent_dist.sample().mul_(0.18215)
+                both_img = self.model.vae.encode(both_img).latent_dist.mean.clone().mul_(0.18215)
 
                 if self.model_parallel:
-                    output = self.model.module(both_img)
+                    output = self.model(both_img)
                 else:
                     output = self.model(both_img)
 
-                target['flow_gt'] = self.model.module.vae.encode(torch.concat((target['flow_gt'], torch.zeros_like(target['flow_gt'][:, :1, :, :])), dim=1)).latent_dist.sample().mul_(0.18215)
+              #  target['flow_gt'] = self.model.vae.encode(0.025 * torch.concat((target['flow_gt'], torch.zeros_like(target['flow_gt'][:, :1, :, :])), dim=1)).latent_dist.mean.clone().mul_(0.18215)
 #
 
                 loss = self.loss_fn(**output, **target, **kwargs)
@@ -416,7 +432,7 @@ class BaseTrainer:
         if new_avg_val_loss < self.min_avg_val_loss:
 
             self.min_avg_val_loss = new_avg_val_loss
-            print("\nNew minimum average validation loss!")
+            print("\nNew minimum average validation loss!", flush=True)
 
             if self.cfg.VALIDATE_ON.lower() == "loss":
                 best_model = deepcopy(self.model)
@@ -427,12 +443,12 @@ class BaseTrainer:
                     save_best_model.state_dict(),
                     os.path.join(self.cfg.CKPT_DIR, self.model_name + "_best.pth"),
                 )
-                print(f"Saved new best model!\n")
+                print(f"Saved new best model!\n", flush=True)
 
         if new_avg_val_metric < self.min_avg_val_metric:
 
             self.min_avg_val_metric = new_avg_val_metric
-            print("\nNew minimum average validation metric!")
+            print("\nNew minimum average validation metric!", flush=True)
 
             if self.cfg.VALIDATE_ON.lower() == "metric":
                 best_model = deepcopy(self.model)
@@ -443,7 +459,7 @@ class BaseTrainer:
                     save_best_model.state_dict(),
                     os.path.join(self.cfg.CKPT_DIR, self.model_name + "_best.pth"),
                 )
-                print(f"Saved new best model!\n")
+                print(f"Saved new best model!\n", flush=True)
 
     def _reload_trainer_states(
         self,
