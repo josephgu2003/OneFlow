@@ -31,7 +31,7 @@ SCHEDULER:
     div_factor: 250
 CRITERION:
   CUSTOM: True
-  NAME: MultiScaleLossUncertain
+  NAME: MultiScaleLoss
   PARAMS:
     norm: "l2" 
     weights: [1.0]
@@ -41,7 +41,7 @@ EPOCHS: null
 NUM_STEPS: 100100
 LOG_DIR: "./logs"
 CKPT_DIR: "./ckpts"
-LOG_ITERATIONS_INTERVAL: 10
+LOG_ITERATIONS_INTERVAL: 100
 CKPT_INTERVAL: 5000
 VALIDATE_INTERVAL: 1000
 VALIDATE_ON: metric

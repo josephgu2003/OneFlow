@@ -281,7 +281,6 @@ class BaseTrainer:
             with torch.no_grad():
                 self.model.vae.eval()
                 both_img = torch.concat((img1, img2), dim=0)
-                both_img = torch.nn.functional.interpolate(both_img, size=(448, 448), mode='bilinear')
 
             output = self.model(both_img)
 
@@ -304,7 +303,6 @@ class BaseTrainer:
             self.writer.add_scalar('lr', self.optimizer.param_groups[0]['lr'], current_iter)
             import torchshow 
             torchshow.save(target['flow_gt'][0])
-            torchshow.save(torch.exp(output['flow_preds'][0, -1:, :, :]) / 100)
             torchshow.save(output['flow_preds'][0, :2, :, :])
      
         if self.cfg.GRAD_CLIP.USE is True:
@@ -358,7 +356,6 @@ class BaseTrainer:
 
 #
                 both_img = torch.concat((img1, img2), dim=0)
-                both_img = torch.nn.functional.interpolate(both_img, size=(448, 448), mode='bilinear')
 
                 if self.model_parallel:
                     output = self.model(both_img)

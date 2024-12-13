@@ -77,7 +77,7 @@ class DiT(BaseModule):
             DiTBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio) for _ in range(depth)
         ])
         self.decoder_blocks = nn.ModuleList([
-            DecoderBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio) for _ in range(2)
+            DecoderBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio) for _ in range(4)
         ])
         self.final_layer_flow = FinalLayer(hidden_size, patch_size, self.out_channels)
         self.q = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
@@ -201,6 +201,9 @@ class DiT(BaseModule):
         t: (N,) tensor of diffusion timesteps
         y: (N,) tensor of class labels
         """
+        hw = both_img.shape[2:]
+        both_img = torch.nn.functional.interpolate(both_img, size=(448, 448), mode='bilinear')
+        
         x = self.vits16.prepare_tokens_with_masks(both_img, None)
         for blk in self.vits16.blocks:
             x = blk(x)
@@ -226,7 +229,14 @@ class DiT(BaseModule):
     #    x = self.unpatchify(x)[:, :self.in_channels, :, :]                   # (N, out_channels, H, W)
         # x = self.unpatchify(x)[:, self.in_channels:, :, :]                   # (N, out_channels, H, W)
         x = self.unpatchify(x)
-        x = torch.nn.functional.interpolate(x, size=(256, 256), mode='bilinear') 
+        x = torch.nn.functional.interpolate(x, size=hw, mode='bilinear')
+        hs = torch.arange(hw[0], device=both_img.device)
+        ws = torch.arange(hw[1], device=both_img.device)
+        
+        wh = torch.tensor(hw[::-1], device=both_img.device).unsqueeze(-1).unsqueeze(-1).unsqueeze(0)
+        flow = (x[:, :2, :, :] + 0.5) * wh - torch.stack(torch.meshgrid(hs, ws, indexing='ij'))
+        x = flow 
+         
         return {'flow_preds': x, "flow_upsampled": x}
 
     def forward_dit(self, both_img):
