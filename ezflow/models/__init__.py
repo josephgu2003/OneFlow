@@ -8,3 +8,4 @@ from .pwcnet import PWCNet
 from .raft import RAFT
 from .vcn import VCN
 from .dit import DiT
+from .dino import Dino

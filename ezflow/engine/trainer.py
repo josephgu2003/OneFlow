@@ -9,7 +9,7 @@ import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn as nn
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 
@@ -277,15 +277,11 @@ class BaseTrainer:
         if self._is_main_process():
             start_time = time.time()
 
-        with torch.amp.autocast(device_type='cuda:0', enabled=self.cfg.MIXED_PRECISION):
+        with autocast(device_type='cuda', enabled=self.cfg.MIXED_PRECISION, dtype=torch.bfloat16):
             with torch.no_grad():
-                self.model.vae.eval()
                 both_img = torch.concat((img1, img2), dim=0)
 
             output = self.model(both_img)
-
-#            with torch.no_grad():
-  #              target['flow_gt'] = self.model.vae.encode(0.025 * torch.concat((target['flow_gt'], torch.zeros_like(target['flow_gt'][:, :1, :, :])), dim=1)).latent_dist.mean.clone().mul_(0.18215)
 
             loss = self.loss_fn(**output, **target, **kwargs)
 
@@ -362,15 +358,12 @@ class BaseTrainer:
                 else:
                     output = self.model(both_img)
 
-              #  target['flow_gt'] = self.model.vae.encode(0.025 * torch.concat((target['flow_gt'], torch.zeros_like(target['flow_gt'][:, :1, :, :])), dim=1)).latent_dist.mean.clone().mul_(0.18215)
-#
-
                 loss = self.loss_fn(**output, **target, **kwargs)
 
                 loss_meter.update(loss.item())
 
-                # metric = self._calculate_metric(output, target)
-                metric_meter.update(loss.item())
+                metric = self._calculate_metric(output, target)
+                metric_meter.update(metric.item())
 
                 del output
 
