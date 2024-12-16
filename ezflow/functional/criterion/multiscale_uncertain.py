@@ -115,6 +115,9 @@ class MultiScaleLossUncertain(nn.Module):
                 real_flow[:, 1, :, :] = real_flow[:, 1, :, :] * (
                     h / level_pred.shape[2]
                 )
+                var = F.interpolate(
+                    var, (h, w), mode="bilinear", align_corners=True
+                )
                 target = flow_gt
 
             elif self.resize_flow.lower() == "downsample":

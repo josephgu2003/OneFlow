@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 
 from ezflow.models.build import MODEL_REGISTRY
-from ezflow.models.dit import DecoderBlock, get_2d_sincos_pos_embed
+from ezflow.models.dit import get_2d_sincos_pos_embed
+from ezflow.modules.decoder import DecoderBlock
 from ezflow.modules.base_module import BaseModule 
 from ezflow.utils.invert_flow import reparameterize
 
@@ -55,7 +56,7 @@ class Dino(BaseModule):
     
     def forward(self, both_img):        
         hw = both_img.shape[2:]
-        both_img = simple_interpolate(both_img, size=(448, 448))
+        both_img = simple_interpolate(both_img, size=(448, 448)) # TODO: fix
 
         x = self.vits16.prepare_tokens_with_masks(both_img, None)
         
