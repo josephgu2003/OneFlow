@@ -87,7 +87,7 @@ class MultiScaleLossUncertain(nn.Module):
             "valid_range": cfg.VALID_RANGE,
         }
 
-    def forward(self, flow_preds, flow_gt, **kwargs):
+    def forward(self, flow_preds, flow_gt, my_mask, var, **kwargs):
 
         loss = 0
         b, c, h, w = flow_gt.size()
@@ -125,7 +125,7 @@ class MultiScaleLossUncertain(nn.Module):
                 target = F.adaptive_avg_pool2d(flow_gt, [h, w])
                 real_flow = level_pred
 
-            variance = real_flow[:,-1:,:,:]
+            variance = var
             pred = real_flow[:,:2,:,:]
             mse = torch.square(pred - target)
             loss_value = torch.mean(0.5 * torch.exp(-variance) * mse + 0.5 * variance, dim=1)
@@ -142,7 +142,7 @@ class MultiScaleLossUncertain(nn.Module):
                 with torch.no_grad():
                     mask = torch.ones(target[:, 0, :, :].shape).type_as(target)
 
-            loss_value = loss_value * mask.float()
+            loss_value = loss_value * mask.float() * my_mask.float()
 
             if self.extra_mask is not None:
                 val = self.extra_mask > 0

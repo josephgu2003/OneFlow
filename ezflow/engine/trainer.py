@@ -14,6 +14,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 
 from ezflow.data import DataloaderCreator
+from ezflow.utils import invert_flow
 
 from ..functional import FUNCTIONAL_REGISTRY
 from ..utils import AverageMeter, endpointerror, find_free_port, is_port_available
@@ -279,9 +280,13 @@ class BaseTrainer:
 
         with autocast(device_type='cuda', enabled=self.cfg.MIXED_PRECISION, dtype=torch.bfloat16):
             with torch.no_grad():
-                both_img = torch.concat((img1, img2), dim=0)
+                both_img = torch.concat((img1, img2, img2, img1), dim=0)
+                inv_flow, mask = invert_flow.invert_flow(target['flow_gt'])
+                target['flow_gt'] = torch.concat((target['flow_gt'], inv_flow))
+                target['my_mask'] = torch.concat((torch.ones_like(mask), mask))
 
             output = self.model(both_img)
+            
 
             loss = self.loss_fn(**output, **target, **kwargs)
 
@@ -291,7 +296,7 @@ class BaseTrainer:
         self.scaler.scale(loss).backward()
         self.scaler.unscale_(self.optimizer)
 
-        if current_iter % self.cfg.LOG_ITERATIONS_INTERVAL == 0 and self._is_main_process():
+        if current_iter > 500 and current_iter % self.cfg.LOG_ITERATIONS_INTERVAL == 0 and self._is_main_process():
             #for tag, parm in self.model.named_parameters():
              #   if parm.grad is not None:
             #        self.writer.add_histogram(tag + "_weight", parm.data.cpu().numpy(), current_iter)
@@ -299,7 +304,11 @@ class BaseTrainer:
             self.writer.add_scalar('lr', self.optimizer.param_groups[0]['lr'], current_iter)
             import torchshow 
             torchshow.save(target['flow_gt'][0])
-            torchshow.save(output['flow_preds'][0, :2, :, :])
+            with torch.no_grad():
+               # torchshow.save(img1[0])
+              #  torchshow.save(img2[0])
+             #   torchshow.save(invert_flow.invert_flow(target['flow_gt'])[0][0])
+                torchshow.save(output['flow_preds'][0, :2, :, :])
      
         if self.cfg.GRAD_CLIP.USE is True:
             grad = nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.GRAD_CLIP.VALUE)
@@ -357,13 +366,15 @@ class BaseTrainer:
                     output = self.model(both_img)
                 else:
                     output = self.model(both_img)
+                    
+                target['my_mask'] = torch.ones_like(target['flow_gt'][:, 0, :, :])
 
                 loss = self.loss_fn(**output, **target, **kwargs)
 
                 loss_meter.update(loss.item())
 
                 metric = self._calculate_metric(output, target)
-                metric_meter.update(metric.item())
+                metric_meter.update(metric)
 
                 del output
 

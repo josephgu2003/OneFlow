@@ -87,7 +87,7 @@ class MultiScaleLoss(nn.Module):
             "valid_range": cfg.VALID_RANGE,
         }
 
-    def forward(self, flow_preds, flow_gt, **kwargs):
+    def forward(self, flow_preds, flow_gt, my_mask, **kwargs):
 
         loss = 0
         b, c, h, w = flow_gt.size()
@@ -145,7 +145,7 @@ class MultiScaleLoss(nn.Module):
                 with torch.no_grad():
                     mask = torch.ones(target[:, 0, :, :].shape).type_as(target)
 
-            loss_value = loss_value * mask.float()
+            loss_value = loss_value * mask.float() * my_mask.float()
 
             if self.extra_mask is not None:
                 val = self.extra_mask > 0

@@ -4,16 +4,7 @@ import torch.nn as nn
 from ezflow.models.build import MODEL_REGISTRY
 from ezflow.models.dit import DecoderBlock, get_2d_sincos_pos_embed
 from ezflow.modules.base_module import BaseModule 
-
-def reparameterize(x, hw):
-    h, w = hw[0], hw[1]
-    x = torch.nn.functional.interpolate(x, size=hw, mode='bilinear')
-    hs = torch.arange(h, device=x.device)
-    ws = torch.arange(w, device=x.device)
-    
-    wh = torch.tensor(hw[::-1], device=x.device).unsqueeze(-1).unsqueeze(-1).unsqueeze(0)
-    flow = (x[:, :2, :, :] + 0.5) * wh - torch.stack(torch.meshgrid(hs, ws, indexing='ij'))
-    return flow 
+from ezflow.utils.invert_flow import reparameterize
 
 def simple_interpolate(x, size):
     return torch.nn.functional.interpolate(x, size=size, mode='bilinear')
@@ -23,15 +14,15 @@ class Dino(BaseModule):
     def __init__(self, cfg):
         super().__init__()
         self.hidden_size = cfg.HIDDEN_SIZE
-        self.vits16 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14_reg')
         self.proj = nn.Linear(384, cfg.HIDDEN_SIZE)
-        self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, 2 * 14 * 14)
+        self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, 3)
         num_patches = 32 * 32
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, cfg.HIDDEN_SIZE), requires_grad=False)
         self.decoder_blocks = nn.ModuleList([
             DecoderBlock(cfg.HIDDEN_SIZE, cfg.NUM_HEADS) for _ in range(cfg.DECODER_BLOCKS)
         ])
         self.init_weights()
+        self.vits16 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14_reg')
     
     def init_weights(self):
         def _basic_init(module):
@@ -50,8 +41,8 @@ class Dino(BaseModule):
         x: (N, T, patch_size**2 * C)
         imgs: (N, H, W, C)
         """
-        c = 2
-        p = 14
+        c = 3
+        p = 1
         h = w = int(x.shape[1] ** 0.5)
         assert h * w == x.shape[1]
 
@@ -82,5 +73,9 @@ class Dino(BaseModule):
             
         q = self.final_layer(q) 
         q = self.unpatchify(q)
-        q = reparameterize(q, hw)
-        return {'flow_preds': q, "flow_upsampled": q}
+
+        flow = reparameterize(q[:, :2, :, :], hw)
+        #var = simple_interpolate(flow[:, -1:, :, :], size=hw)
+        var = torch.nn.functional.interpolate(q[:, -1:, :, :], size=hw, mode='bilinear', align_corners=True)
+
+        return {'flow_preds': flow, "flow_upsampled": flow, 'var': var}
