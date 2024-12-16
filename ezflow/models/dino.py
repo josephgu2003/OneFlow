@@ -14,6 +14,8 @@ class Dino(BaseModule):
     def __init__(self, cfg):
         super().__init__()
         self.hidden_size = cfg.HIDDEN_SIZE
+        self.img1_embed = nn.Parameter(torch.randn(1, 1, 384), requires_grad=True)
+        self.img2_embed = nn.Parameter(torch.randn(1, 1, 384), requires_grad=True)
         self.proj = nn.Linear(384, cfg.HIDDEN_SIZE)
         self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, 3)
         num_patches = 32 * 32
@@ -51,22 +53,29 @@ class Dino(BaseModule):
         imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
         return imgs
     
-    def forward(self, both_img):
+    def forward(self, both_img):        
         hw = both_img.shape[2:]
         both_img = simple_interpolate(both_img, size=(448, 448))
+
         x = self.vits16.prepare_tokens_with_masks(both_img, None)
+        
+        x1x2 = torch.chunk(x, 2)
+        img1 = x1x2[0] + self.img1_embed
+        img2 = x1x2[1] + self.img2_embed
+        
+        x = torch.concat((img1, img2), dim=1)
+        
         for blk in self.vits16.blocks:
             x = blk(x)
         x = self.vits16.norm(x)
-        x = x[:, 1 + 4:]
         
         x = self.proj(x)
         
-        x1x2 = torch.chunk(x, 2)
-        x1 = x1x2[0] + self.pos_embed 
-        x2 = x1x2[1] + self.pos_embed 
+        x1x2 = torch.chunk(x, 2, dim=1)
+        x1 = x1x2[0][:, 1+4:] + self.pos_embed
+        x2 = x1x2[1][:, 1+4:] + self.pos_embed
         
-        q = x1 
+        q = x1
         
         for block in self.decoder_blocks:
             q = block(q, x1, x2, None)
