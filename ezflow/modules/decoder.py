@@ -73,8 +73,8 @@ class CrossAttention(nn.Module):
 class DecoderBlock(nn.Module):
     def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, **block_kwargs):
         super().__init__()
-        self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=False, proj_drop=0.3, **block_kwargs)
-        self.attn2 = CrossAttention(hidden_size, num_heads=num_heads, qkv_bias=False, proj_drop=0.3, **block_kwargs)
+        self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=False, qk_norm=False, proj_drop=0.3, **block_kwargs)
+        self.attn2 = CrossAttention(hidden_size, num_heads=num_heads, qkv_bias=False, qk_norm=False, proj_drop=0.3, **block_kwargs)
         
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
         approx_gelu = lambda: nn.GELU(approximate="tanh")
