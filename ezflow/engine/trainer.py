@@ -283,6 +283,7 @@ class BaseTrainer:
                 both_img = torch.concat((img1, img2, img2, img1), dim=0)
                 inv_flow, mask = invert_flow.invert_flow(target['flow_gt'])
                 target['flow_gt'] = torch.concat((target['flow_gt'], inv_flow))
+             #   target['gt_latents'] = self.model.module.encode_flow(target['flow_gt'])
                 target['my_mask'] = torch.concat((torch.ones_like(mask), mask))
 
             output = self.model(both_img)
@@ -302,13 +303,6 @@ class BaseTrainer:
             #        self.writer.add_histogram(tag + "_weight", parm.data.cpu().numpy(), current_iter)
              #       self.writer.add_histogram(tag, parm.grad.data.cpu().numpy(), current_iter)
             self.writer.add_scalar('lr', self.optimizer.param_groups[0]['lr'], current_iter)
-            import torchshow 
-            torchshow.save(target['flow_gt'][0])
-            with torch.no_grad():
-               # torchshow.save(img1[0])
-              #  torchshow.save(img2[0])
-             #   torchshow.save(invert_flow.invert_flow(target['flow_gt'])[0][0])
-                torchshow.save(output['flow_preds'][0, :2, :, :])
      
         if self.cfg.GRAD_CLIP.USE is True:
             grad = nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.GRAD_CLIP.VALUE)
@@ -355,7 +349,7 @@ class BaseTrainer:
         loss_meter = AverageMeter()
 
         with torch.no_grad():
-            for inp, target in self.val_loader:
+            for i, (inp, target) in enumerate(self.val_loader):
                 inp, target = self._to_device(inp, target)
                 img1, img2 = inp
 
@@ -367,6 +361,14 @@ class BaseTrainer:
                 else:
                     output = self.model(both_img)
                     
+                import torchshow 
+                
+                if i % 100 == 0:
+                    torchshow.save(target['flow_gt'][0])
+                    with torch.no_grad():
+                        torchshow.save(output['flow_preds'][0, :2, :, :])
+                    
+                #target['gt_latents'] = self.model.module.encode_flow(target['flow_gt'])
                 target['my_mask'] = torch.ones_like(target['flow_gt'][:, 0, :, :])
 
                 loss = self.loss_fn(**output, **target, **kwargs)

@@ -154,8 +154,8 @@ class FinalLayer(nn.Module):
         )
 
     def forward(self, x, c):
-        shift, scale = self.adaLN_modulation(c).chunk(2, dim=1)
-        x = modulate(self.norm_final(x), shift, scale)
+      #  shift, scale = self.adaLN_modulation(c).chunk(2, dim=1)
+       # x = modulate(self.norm_final(x), shift, scale)
         x = self.linear(x)
         return x
 
@@ -239,6 +239,10 @@ class DiT(nn.Module):
         for block in self.blocks:
             nn.init.constant_(block.adaLN_modulation[-1].weight, 0)
             nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
+            block.attn.fused_attn = True
+        for block in self.decoder_blocks:
+            block.attn.fused_attn = True
+            block.attn2.fused_attn = True
 
         # Zero-out output layers:
         nn.init.constant_(self.final_layer.adaLN_modulation[-1].weight, 0)
@@ -247,6 +251,7 @@ class DiT(nn.Module):
         nn.init.constant_(self.final_layer.linear.bias, 0)
         
         state_dict = download_model()
+        #state_dict = {k: v for k, v in state_dict.items() if 'final_layer' not in k and 'x_embedder' not in k and 'pos_embed' not in k}
         state_dict = {k: v for k, v in state_dict.items() if 'final_layer' not in k}
         errors = self.load_state_dict(state_dict, strict=False)
         print(errors)
@@ -303,7 +308,14 @@ class DiT(nn.Module):
         x = torch.einsum('nhwpqc->nchpwq', x)
         imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
         return imgs
-
+    
+    def encode_flow(self, flow_gt): 
+        h, w = flow_gt.size(2), flow_gt.size(3)
+        flow = torch.nn.functional.interpolate(flow_gt, size=(256, 256), mode='bilinear', align_corners=True)
+        flow[:, 0, :, :] = flow[:, 0, :, :] * 256 / w
+        flow[:, 1, :, :] = flow[:, 1, :, :] * 256 / h
+        return self.vae.encode(0.025 * torch.concat((flow, torch.zeros_like(flow[:, 0:1, :, :])), dim=1)).latent_dist.mean.mul_(0.18215)
+    
     def forward(self, both_img):
         """
         Forward pass of DiT.
@@ -311,6 +323,7 @@ class DiT(nn.Module):
         t: (N,) tensor of diffusion timesteps
         y: (N,) tensor of class labels
         """
+        hw = both_img.shape[2:]
         self.vae.eval()
         with torch.no_grad():
             both_img = torch.nn.functional.interpolate(both_img, size=(256, 256), mode='bilinear', align_corners=True)
@@ -341,17 +354,19 @@ class DiT(nn.Module):
         q = self.final_layer(q, c) 
         q = self.unpatchify(q)
 
-        with torch.no_grad():
-            q = self.vae.decode(q / 0.18215).sample
-        
-        q = self.out_proj(q.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
-        
-        # q = self.vae ... 
-        flow = reparameterize(q[:, :2, :, :], (256, 256))
-        #var = simple_interpolate(flow[:, -1:, :, :], size=hw)
-        var = torch.nn.functional.interpolate(q[:, -1:, :, :], size=(256, 256), mode='bilinear', align_corners=True)
+        latents = q
 
-        return {'flow_preds': flow, "flow_upsampled": flow, 'var': var}
+        if self.training:
+            return {'latents': latents}
+        else:
+            with torch.no_grad():
+                q = self.vae.decode(q / 0.18215).sample
+                flow = 40* torch.nn.functional.interpolate(q[:, :2, :, :], size=hw, mode='bilinear', align_corners=True)
+
+                flow[:, 0, :, :] = flow[:, 0, :, :] * hw[1] / 256
+                flow[:, 1, :, :] = flow[:, 1, :, :] * hw[0] / 256
+                
+            return {'latents': latents, 'flow_preds': flow, "flow_upsampled": flow}
 
     def forward_with_cfg(self, x, t, y, cfg_scale):
         """
