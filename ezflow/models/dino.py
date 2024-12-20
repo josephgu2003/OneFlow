@@ -2,6 +2,7 @@ from functools import partial
 import torch 
 import torch.nn as nn
 
+from ezflow.encoder.dinov2.backbones import dinov2_vits14_reg
 from ezflow.encoder.dinov2.block import Block
 from ezflow.encoder.dinov2.native_attention import NativeAttention
 from ezflow.encoder.dinov2.vision_transformer import DinoVisionTransformer, vit_small
@@ -14,6 +15,8 @@ from ezflow.utils.invert_flow import reparameterize
 def simple_interpolate(x, size):
     return torch.nn.functional.interpolate(x, size=size, mode='bilinear')
 
+scaler = 2
+
 @MODEL_REGISTRY.register()
 class Dino(BaseModule):
     def __init__(self, cfg):
@@ -21,27 +24,15 @@ class Dino(BaseModule):
         self.hidden_size = cfg.HIDDEN_SIZE
         self.proj = nn.Linear(384, cfg.HIDDEN_SIZE)
         self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, 3)
-        num_patches = 32 * 32
+        num_patches = 32 * 32 * scaler * scaler
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, cfg.HIDDEN_SIZE), requires_grad=False)
         self.decoder_blocks = nn.ModuleList([
             DecoderBlock(cfg.HIDDEN_SIZE, cfg.NUM_HEADS) for _ in range(cfg.DECODER_BLOCKS)
         ])
         self.init_weights()
         #self.vits16 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14_reg')
-        self.vits16 = DinoVisionTransformer(
-            patch_size=14,
-            embed_dim=384,
-            depth=12,
-            num_heads=6,
-            mlp_ratio=4,
-            block_fn=partial(Block, attn_class=NativeAttention),
-            num_register_tokens=4,
-            img_size=518
-        )
-        state_dict = torch.load(cfg.DINO_PATH, map_location='cpu')
-        errors = self.vits16.load_state_dict(state_dict, False)
-        print(errors) 
-    
+        self.vits16 = dinov2_vits14_reg(block_fn=partial(Block, attn_class=NativeAttention))
+      
     def init_weights(self):
         def _basic_init(module):
             if isinstance(module, nn.Linear):
@@ -50,7 +41,7 @@ class Dino(BaseModule):
                     torch.nn.init.constant_(module.bias, 0)
         self.apply(_basic_init)
        
-        pos_embed = get_2d_sincos_pos_embed(self.hidden_size, grid_size=32) 
+        pos_embed = get_2d_sincos_pos_embed(self.hidden_size, grid_size=32 * scaler) 
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
         
         
@@ -71,7 +62,7 @@ class Dino(BaseModule):
     
     def forward(self, both_img):        
         hw = both_img.shape[2:]
-        both_img = simple_interpolate(both_img, size=(448, 448)) # TODO: fix
+        both_img = simple_interpolate(both_img, size=(448 * scaler, 448 * scaler)) # TODO: fix
 
         x = self.vits16.prepare_tokens_with_masks(both_img, None)
         
