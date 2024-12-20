@@ -1,6 +1,10 @@
+from functools import partial
 import torch 
 import torch.nn as nn
 
+from ezflow.encoder.dinov2.block import Block
+from ezflow.encoder.dinov2.native_attention import NativeAttention
+from ezflow.encoder.dinov2.vision_transformer import DinoVisionTransformer, vit_small
 from ezflow.models.build import MODEL_REGISTRY
 from ezflow.models.dit import get_2d_sincos_pos_embed
 from ezflow.modules.decoder import DecoderBlock
@@ -15,8 +19,6 @@ class Dino(BaseModule):
     def __init__(self, cfg):
         super().__init__()
         self.hidden_size = cfg.HIDDEN_SIZE
-        self.img1_embed = nn.Parameter(torch.randn(1, 1, 384), requires_grad=True)
-        self.img2_embed = nn.Parameter(torch.randn(1, 1, 384), requires_grad=True)
         self.proj = nn.Linear(384, cfg.HIDDEN_SIZE)
         self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, 3)
         num_patches = 32 * 32
@@ -25,7 +27,20 @@ class Dino(BaseModule):
             DecoderBlock(cfg.HIDDEN_SIZE, cfg.NUM_HEADS) for _ in range(cfg.DECODER_BLOCKS)
         ])
         self.init_weights()
-        self.vits16 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14_reg')
+        #self.vits16 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14_reg')
+        self.vits16 = DinoVisionTransformer(
+            patch_size=14,
+            embed_dim=384,
+            depth=12,
+            num_heads=6,
+            mlp_ratio=4,
+            block_fn=partial(Block, attn_class=NativeAttention),
+            num_register_tokens=4,
+            img_size=518
+        )
+        state_dict = torch.load(cfg.DINO_PATH, map_location='cpu')
+        errors = self.vits16.load_state_dict(state_dict, False)
+        print(errors) 
     
     def init_weights(self):
         def _basic_init(module):
@@ -61,8 +76,8 @@ class Dino(BaseModule):
         x = self.vits16.prepare_tokens_with_masks(both_img, None)
         
         x1x2 = torch.chunk(x, 2)
-        img1 = x1x2[0] + self.img1_embed
-        img2 = x1x2[1] + self.img2_embed
+        img1 = x1x2[0] # TODO: img encoding??
+        img2 = x1x2[1]
         
         x = torch.concat((img1, img2), dim=1)
         
