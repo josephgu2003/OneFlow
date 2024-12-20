@@ -30,7 +30,6 @@ class Dino(BaseModule):
             DecoderBlock(cfg.HIDDEN_SIZE, cfg.NUM_HEADS) for _ in range(cfg.DECODER_BLOCKS)
         ])
         self.init_weights()
-        #self.vits16 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14_reg')
         self.vits16 = dinov2_vits14_reg(block_fn=partial(Block, attn_class=NativeAttention))
       
     def init_weights(self):
