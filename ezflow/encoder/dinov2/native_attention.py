@@ -59,9 +59,9 @@ class NativeAttention(nn.Module):
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
 
-        q, k, v = qkv[0] * self.scale, qkv[1], qkv[2]
+        q, k, v = qkv[0], qkv[1], qkv[2]
         
-        x = torch.nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop if self.training else 0.0)
+        x = torch.nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop if self.training else 0.0, scale=self.scale)
         x = x.transpose(1, 2).reshape(B, N, C)
         
         x = self.proj(x)

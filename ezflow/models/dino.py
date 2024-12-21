@@ -15,16 +15,15 @@ from ezflow.utils.invert_flow import reparameterize
 def simple_interpolate(x, size):
     return torch.nn.functional.interpolate(x, size=size, mode='bilinear')
 
-scaler = 2
-
 @MODEL_REGISTRY.register()
 class Dino(BaseModule):
     def __init__(self, cfg):
         super().__init__()
+        self.scaler = cfg.SCALER
         self.hidden_size = cfg.HIDDEN_SIZE
         self.proj = nn.Linear(384, cfg.HIDDEN_SIZE)
         self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, 3)
-        num_patches = 32 * 32 * scaler * scaler
+        num_patches = 32 * 32 * self.scaler * self.scaler
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, cfg.HIDDEN_SIZE), requires_grad=False)
         self.decoder_blocks = nn.ModuleList([
             DecoderBlock(cfg.HIDDEN_SIZE, cfg.NUM_HEADS) for _ in range(cfg.DECODER_BLOCKS)
@@ -40,7 +39,7 @@ class Dino(BaseModule):
                     torch.nn.init.constant_(module.bias, 0)
         self.apply(_basic_init)
        
-        pos_embed = get_2d_sincos_pos_embed(self.hidden_size, grid_size=32 * scaler) 
+        pos_embed = get_2d_sincos_pos_embed(self.hidden_size, grid_size=32 * self.scaler) 
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
         
         
@@ -61,7 +60,7 @@ class Dino(BaseModule):
     
     def forward(self, both_img):        
         hw = both_img.shape[2:]
-        both_img = simple_interpolate(both_img, size=(448 * scaler, 448 * scaler)) # TODO: fix
+        both_img = simple_interpolate(both_img, size=(448 * self.scaler, 448 * self.scaler)) # TODO: fix
 
         x = self.vits16.prepare_tokens_with_masks(both_img, None)
         
