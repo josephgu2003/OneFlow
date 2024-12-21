@@ -8,7 +8,7 @@ from ezflow.encoder.dinov2.native_attention import NativeAttention
 from ezflow.encoder.dinov2.vision_transformer import DinoVisionTransformer, vit_small
 from ezflow.models.build import MODEL_REGISTRY
 from ezflow.models.dit import get_2d_sincos_pos_embed
-from ezflow.modules.decoder import DecoderBlock
+from ezflow.modules.decoder import ConcatenateDecoderBlock, DecoderBlock
 from ezflow.modules.base_module import BaseModule 
 from ezflow.utils.invert_flow import reparameterize
 
@@ -26,7 +26,7 @@ class Dino(BaseModule):
         num_patches = 32 * 32 * self.scaler * self.scaler
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, cfg.HIDDEN_SIZE), requires_grad=False)
         self.decoder_blocks = nn.ModuleList([
-            DecoderBlock(cfg.HIDDEN_SIZE, cfg.NUM_HEADS) for _ in range(cfg.DECODER_BLOCKS)
+            ConcatenateDecoderBlock(cfg.HIDDEN_SIZE, cfg.NUM_HEADS) for _ in range(cfg.DECODER_BLOCKS)
         ])
         self.init_weights()
         self.vits16 = dinov2_vits14_reg(block_fn=partial(Block, attn_class=NativeAttention))
@@ -64,11 +64,11 @@ class Dino(BaseModule):
 
         x = self.vits16.prepare_tokens_with_masks(both_img, None)
         
-        x1x2 = torch.chunk(x, 2)
-        img1 = x1x2[0] # TODO: img encoding??
-        img2 = x1x2[1]
+        #x1x2 = torch.chunk(x, 2)
+        #img1 = x1x2[0] # TODO: img encoding??
+        #img2 = x1x2[1]
         
-        x = torch.concat((img1, img2), dim=1)
+        #x = torch.concat((img1, img2), dim=1)
         
         for blk in self.vits16.blocks:
             x = blk(x)
@@ -76,7 +76,7 @@ class Dino(BaseModule):
         
         x = self.proj(x)
         
-        x1x2 = torch.chunk(x, 2, dim=1)
+        x1x2 = torch.chunk(x, 2, dim=0)
         x1 = x1x2[0][:, 1+4:] + self.pos_embed
         x2 = x1x2[1][:, 1+4:] + self.pos_embed
         
