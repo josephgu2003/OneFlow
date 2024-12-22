@@ -514,7 +514,12 @@ class BaseTrainer:
                 )
 
         self._setup_model(rank)
-        self.model.load_state_dict(model_state_dict)
+        
+        if rank is None: # hack
+            self.model.load_state_dict(model_state_dict)
+        else:
+            self.model.module.load_state_dict(model_state_dict)
+            
         print("Model state loaded!!")
 
         self._setup_training()
@@ -917,6 +922,7 @@ class DistributedTrainer(BaseTrainer):
         total_iterations, start_iteration = self._reload_trainer_states(
             consolidated_ckpt=consolidated_ckpt,
             use_cfg=False,
+            rank=rank,
         )
 
         os.makedirs(self.cfg.CKPT_DIR, exist_ok=True)
