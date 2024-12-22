@@ -1,10 +1,3 @@
-import argparse
-
-from ezflow.data import build_dataloader, get_dataset_list
-from ezflow.engine import DistributedTrainer, Trainer, get_training_cfg
-from ezflow.models import build_model, get_model_list
-
-
 def main(args):
 
     # Load training configuration
@@ -56,10 +49,18 @@ def main(args):
         )
 
     # Train model
-    trainer.train(total_epochs=args.n_epochs)
+    if args.resume != 'None':
+        trainer.resume_training(consolidated_ckpt=args.resume) 
+    else:
+        trainer.train(total_epochs=args.n_epochs)
 
 
 if __name__ == "__main__":
+    import argparse
+
+    from ezflow.data import build_dataloader, get_dataset_list
+    from ezflow.engine import DistributedTrainer, Trainer, get_training_cfg
+    from ezflow.models import build_model, get_model_list
 
     parser = argparse.ArgumentParser(
         description="Train an optical flow model using EzFlow"
@@ -123,6 +124,11 @@ if __name__ == "__main__":
         type=str,
         default="0",
         help="Device(s) to train on separated by commas. -1 for CPU",
+    )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default="None",
     )
 
     args = parser.parse_args()

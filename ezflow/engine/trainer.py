@@ -472,9 +472,10 @@ class BaseTrainer:
         start_iteration=None,
         scheduler_ckpt=None,
         use_cfg=False,
+        rank=None,
     ):
 
-        self._setup_device()
+        self._setup_device(rank)
 
         consolidated_ckpt = (
             self.cfg.RESUME_TRAINING.CONSOLIDATED_CKPT
@@ -512,7 +513,7 @@ class BaseTrainer:
                     scheduler_ckpt, map_location=self.device
                 )
 
-        self._setup_model()
+        self._setup_model(rank)
         self.model.load_state_dict(model_state_dict)
         print("Model state loaded!!")
 
@@ -632,7 +633,7 @@ class Trainer(BaseTrainer):
         self.train_loader = train_loader_creator.get_dataloader()
         self.val_loader = val_loader_creator.get_dataloader()
 
-    def _setup_device(self):
+    def _setup_device(self, rank=None):
 
         if (
             isinstance(self.cfg.DEVICE, str) and self.cfg.DEVICE.lower() == "cpu"
@@ -652,7 +653,7 @@ class Trainer(BaseTrainer):
 
         seed(0)
 
-    def _setup_model(self):
+    def _setup_model(self, rank=None):
         self.model = self.model.to(self.device)
 
     def _is_main_process(self):
@@ -897,3 +898,82 @@ class DistributedTrainer(BaseTrainer):
             nprocs=self.cfg.DISTRIBUTED.WORLD_SIZE,
             join=True,
         )
+        
+    def _resume_worker(
+        self,
+        rank,
+        consolidated_ckpt=None,
+    ):
+
+        #
+        #self._setup_device(rank)
+        self._setup_ddp(rank)
+        #self._setup_model(rank)
+        self.train_loader = self.train_loader_creator.get_dataloader(rank=rank)
+
+#        self._setup_training(
+ #           rank=rank, loss_fn=loss_fn, optimizer=optimizer, scheduler=scheduler
+  #      )
+        total_iterations, start_iteration = self._reload_trainer_states(
+            consolidated_ckpt=consolidated_ckpt,
+            use_cfg=False,
+        )
+
+        os.makedirs(self.cfg.CKPT_DIR, exist_ok=True)
+        os.makedirs(self.cfg.LOG_DIR, exist_ok=True)
+
+        # synchronizes all the threads to reach this point before moving on
+        dist.barrier()
+        self._trainer(total_iterations, start_iteration)
+
+        if self._is_main_process():
+            print("\nTraining complete!")
+            print(f"Total training time: {str(timedelta(seconds=sum(self.times)))}")
+
+        self._cleanup()
+
+
+    def resume_training(
+        self,
+        consolidated_ckpt=None,
+        model_ckpt=None,
+        optimizer_ckpt=None,
+        total_iterations=None,
+        start_iteration=None,
+        scheduler_ckpt=None,
+        use_cfg=False,
+    ):
+
+        """
+        Method to resume training of a model
+        Parameters
+        ----------
+        consolidated_ckpt : str, optional
+            The path to the consolidated checkpoint file. Defaults to None (which uses the consolidated checkpoint file specified in the config file).
+        model_ckpt : str, optional
+            The path to the model checkpoint file. Defaults to None (which uses the model checkpoint file specified in the config file).
+        optimizer_ckpt : str, optional
+            The path to the optimizer checkpoint file. Defaults to None (which uses the optimizer checkpoint file specified in the config file).
+        total_iterations : int, optional
+            The number of epochs or steps to train for. Defaults to None (which uses the number of epochs specified in the config file)
+        start_iteration : int, optional
+            The epoch or step number to resume training from. Defaults to None (which starts from 0).
+        scheduler_ckpt : str, optional
+            The path to the scheduler checkpoint file. Defaults to None (which uses the scheduler checkpoint file specified in the config file).
+        use_cfg : bool, optional
+            Whether to use the config file or not. Defaults to False.
+        """
+
+        print("Training config:\n")
+        print(self.cfg)
+        print("-" * 80)
+        print("\nResuming with distributed training\n")
+        print("-" * 80)
+
+        mp.spawn(
+            self._resume_worker,
+            args=(consolidated_ckpt,),
+            nprocs=self.cfg.DISTRIBUTED.WORLD_SIZE,
+            join=True,
+        )
+
