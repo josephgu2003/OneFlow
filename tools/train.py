@@ -30,7 +30,11 @@ def main(args):
     val_loader = build_dataloader(cfg.DATA, split="validation")
 
     # Build model
-    model = build_model(args.model, default=True)
+    if args.custom_cfg == 'None':
+        model = build_model(args.model, default=True)
+    else:
+        model = build_model(args.model, cfg_path=args.custom_cfg, custom_cfg=True, default=False)
+        
 
     # Create trainer
     if cfg.DISTRIBUTED.USE is True:
@@ -127,6 +131,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--resume",
+        type=str,
+        default="None",
+    )
+    parser.add_argument(
+        "--custom_cfg",
         type=str,
         default="None",
     )
