@@ -1,2 +1,2 @@
 _BASE_: './dino.yaml'
-SCALER: 1
+SCALER: 2
