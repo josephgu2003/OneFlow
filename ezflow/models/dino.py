@@ -22,14 +22,15 @@ class Dino(BaseModule):
         self.scaler = cfg.SCALER
         self.hidden_size = cfg.HIDDEN_SIZE
         self.proj = nn.Linear(384, cfg.HIDDEN_SIZE)
-        self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, 3)
-        num_patches = 32 * 32 * self.scaler * self.scaler
+        self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, -1)
+        num_patches = 16 * 16 * self.scaler * self.scaler
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, cfg.HIDDEN_SIZE), requires_grad=False)
         self.decoder_blocks = nn.ModuleList([
             DecoderBlock(cfg.HIDDEN_SIZE, cfg.NUM_HEADS) for _ in range(cfg.DECODER_BLOCKS)
         ])
         self.init_weights()
         self.vits16 = dinov2_vits14_reg(block_fn=partial(Block, attn_class=NativeAttention))
+        self.vqgan = None
       
     def init_weights(self):
         def _basic_init(module):
@@ -39,7 +40,7 @@ class Dino(BaseModule):
                     torch.nn.init.constant_(module.bias, 0)
         self.apply(_basic_init)
        
-        pos_embed = get_2d_sincos_pos_embed(self.hidden_size, grid_size=32 * self.scaler) 
+        pos_embed = get_2d_sincos_pos_embed(self.hidden_size, grid_size=16 * self.scaler) 
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
         
         
@@ -57,10 +58,17 @@ class Dino(BaseModule):
         x = torch.einsum('nhwpqc->nchpwq', x)
         imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
         return imgs
+ 
+    def encode_flow(self, flow_gt): 
+        h, w = flow_gt.size(2), flow_gt.size(3)
+        flow = torch.nn.functional.interpolate(flow_gt, size=(256, 256), mode='bilinear', align_corners=True)
+        
+        return self.vqgan.encode(torch.concat((flow, torch.zeros_like(flow[:, 0:1, :, :])), dim=1))[0]
+        
     
     def forward(self, both_img):        
         hw = both_img.shape[2:]
-        both_img = simple_interpolate(both_img, size=(448 * self.scaler, 448 * self.scaler)) # TODO: fix
+        both_img = simple_interpolate(both_img, size=(224, 224)) # TODO: fix
 
         x = self.vits16.prepare_tokens_with_masks(both_img, None)
         
@@ -88,8 +96,13 @@ class Dino(BaseModule):
         q = self.final_layer(q) 
         q = self.unpatchify(q)
 
-        flow = reparameterize(q[:, :2, :, :], hw)
-        #var = simple_interpolate(flow[:, -1:, :, :], size=hw)
-        var = torch.nn.functional.interpolate(q[:, -1:, :, :], size=hw, mode='bilinear', align_corners=True)
+        latents = q
 
-        return {'flow_preds': flow, "flow_upsampled": flow, 'var': var}
+        if self.training:
+            return {'latents': latents}
+        else:
+            with torch.no_grad():
+                q = self.vqgan.decode(q)
+                flow = torch.nn.functional.interpolate(q[:, :2, :, :], size=hw, mode='bilinear', align_corners=True)
+                
+            return {'latents': latents, 'flow_preds': flow, "flow_upsampled": flow}
