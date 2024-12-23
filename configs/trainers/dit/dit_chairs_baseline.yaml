@@ -31,7 +31,7 @@ SCHEDULER:
     div_factor: 250
 CRITERION:
   CUSTOM: True
-  NAME: MultiScaleLossUncertain
+  NAME: VQLoss
   PARAMS:
     norm: "l2" 
     weights: [1.0]

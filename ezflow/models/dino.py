@@ -2,6 +2,7 @@ from functools import partial
 import torch 
 import torch.nn as nn
 
+from ezflow.decoder.vq.utils import instantiate_from_config
 from ezflow.encoder.dinov2.backbones import dinov2_vits14_reg
 from ezflow.encoder.dinov2.block import Block
 from ezflow.encoder.dinov2.native_attention import NativeAttention
@@ -32,7 +33,7 @@ class Dino(BaseModule):
         self.init_weights()
         self.vits16 = dinov2_vits14_reg(block_fn=partial(Block, attn_class=NativeAttention))
         
-        self.vqgan = None
+        self.vqgan = instantiate_from_config(cfg.model)
         for param in self.vqgan.parameters():
             param.requires_grad_(False)
         self.vqgan.eval()
