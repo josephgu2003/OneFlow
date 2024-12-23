@@ -22,7 +22,8 @@ class Dino(BaseModule):
         self.scaler = cfg.SCALER
         self.hidden_size = cfg.HIDDEN_SIZE
         self.proj = nn.Linear(384, cfg.HIDDEN_SIZE)
-        self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, -1)
+        self.z_dim = -1
+        self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, self.z_dim)
         num_patches = 16 * 16 * self.scaler * self.scaler
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, cfg.HIDDEN_SIZE), requires_grad=False)
         self.decoder_blocks = nn.ModuleList([
@@ -30,7 +31,11 @@ class Dino(BaseModule):
         ])
         self.init_weights()
         self.vits16 = dinov2_vits14_reg(block_fn=partial(Block, attn_class=NativeAttention))
+        
         self.vqgan = None
+        for param in self.vqgan.parameters():
+            param.requires_grad_(False)
+        self.vqgan.eval()
       
     def init_weights(self):
         def _basic_init(module):
@@ -49,7 +54,7 @@ class Dino(BaseModule):
         x: (N, T, patch_size**2 * C)
         imgs: (N, H, W, C)
         """
-        c = 3
+        c = self.z_dim
         p = 1
         h = w = int(x.shape[1] ** 0.5)
         assert h * w == x.shape[1]
@@ -60,6 +65,7 @@ class Dino(BaseModule):
         return imgs
  
     def encode_flow(self, flow_gt): 
+        self.vqgan.eval()
         h, w = flow_gt.size(2), flow_gt.size(3)
         flow = torch.nn.functional.interpolate(flow_gt, size=(256, 256), mode='bilinear', align_corners=True)
         
@@ -67,6 +73,7 @@ class Dino(BaseModule):
         
     
     def forward(self, both_img):        
+        self.vqgan.eval()
         hw = both_img.shape[2:]
         both_img = simple_interpolate(both_img, size=(224, 224)) # TODO: fix
 
