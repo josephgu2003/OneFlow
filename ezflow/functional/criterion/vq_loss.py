@@ -87,7 +87,9 @@ class VQLoss(nn.Module):
             "valid_range": cfg.VALID_RANGE,
         }
 
-    def forward(self, flow_preds, flow_gt, my_mask, **kwargs):
+    def forward(self, latents, gt_latents, my_mask, **kwargs):
+        flow_preds = latents
+        flow_gt = gt_latents.reshape(flow_preds.shape[0], flow_preds.shape[2], flow_preds.shape[3])
         nan_mask = (~torch.isnan(flow_gt)).float()
         flow_gt[torch.isnan(flow_gt)] = 0.0
         target = flow_gt 
@@ -100,9 +102,9 @@ class VQLoss(nn.Module):
                 )
         else:
             with torch.no_grad():
-                mask = torch.ones(target[:, 0, :, :].shape).type_as(target)
+                mask = torch.ones(target[:, :, :].shape).type_as(target)
                 
-        loss_value = F.cross_entropy(flow_preds, flow_gt)
+        loss_value = F.cross_entropy(flow_preds, flow_gt, reduction='none')
         #loss_value = loss_value * mask.float() * my_mask.float()
         loss_value = loss_value * mask.float() # TODO: account for masks
 
@@ -110,4 +112,4 @@ class VQLoss(nn.Module):
             val = self.extra_mask > 0
             loss_value = loss_value[val]
 
-        return loss_value
+        return torch.mean(loss_value)
