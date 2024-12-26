@@ -16,6 +16,8 @@ from ezflow.utils.invert_flow import reparameterize
 def simple_interpolate(x, size):
     return torch.nn.functional.interpolate(x, size=size, mode='bilinear')
 
+flow_scale = 40.0
+
 @MODEL_REGISTRY.register()
 class Dino(BaseModule):
     def __init__(self, cfg):
@@ -23,8 +25,9 @@ class Dino(BaseModule):
         self.scaler = cfg.SCALER
         self.hidden_size = cfg.HIDDEN_SIZE
         self.proj = nn.Linear(384, cfg.HIDDEN_SIZE)
-        self.z_dim = -1
-        self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, self.z_dim)
+        self.n_embed = cfg.model.params.n_embed
+        self.embed_dim = cfg.model.params.embed_dim
+        self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, self.n_embed)
         num_patches = 16 * 16 * self.scaler * self.scaler
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, cfg.HIDDEN_SIZE), requires_grad=False)
         self.decoder_blocks = nn.ModuleList([
@@ -55,7 +58,7 @@ class Dino(BaseModule):
         x: (N, T, patch_size**2 * C)
         imgs: (N, H, W, C)
         """
-        c = self.z_dim
+        c = self.n_embed
         p = 1
         h = w = int(x.shape[1] ** 0.5)
         assert h * w == x.shape[1]
@@ -68,9 +71,11 @@ class Dino(BaseModule):
     def encode_flow(self, flow_gt): 
         self.vqgan.eval()
         h, w = flow_gt.size(2), flow_gt.size(3)
-        flow = torch.nn.functional.interpolate(flow_gt, size=(256, 256), mode='bilinear', align_corners=True)
+        flow = torch.nn.functional.interpolate(flow_gt, size=(256, 256), mode='bilinear', align_corners=True) / flow_scale
+        flow[:, 0, :, :] = flow[:, 0, :, :] * 256 / w
+        flow[:, 1, :, :] = flow[:, 1, :, :] * 256 / h
         
-        return self.vqgan.encode(torch.concat((flow, torch.zeros_like(flow[:, 0:1, :, :])), dim=1))[0]
+        return self.vqgan.encode(torch.concat((flow, torch.zeros_like(flow[:, 0:1, :, :])), dim=1))[-1][-1]
         
     
     def forward(self, both_img):        
@@ -110,7 +115,12 @@ class Dino(BaseModule):
             return {'latents': latents}
         else:
             with torch.no_grad():
-                q = self.vqgan.decode(q)
-                flow = torch.nn.functional.interpolate(q[:, :2, :, :], size=hw, mode='bilinear', align_corners=True)
+                bhwc = [q.shape[0], q.shape[2], q.shape[3], self.embed_dim]
+                q = torch.argmax(q, dim=1)
+                z_q = self.vqgan.quantize.get_codebook_entry(q, shape=bhwc)
+                q = self.vqgan.decode(z_q)
+                flow = flow_scale * torch.nn.functional.interpolate(q[:, :2, :, :], size=hw, mode='bilinear', align_corners=True)
+                flow[:, 0, :, :] = flow[:, 0, :, :] * hw[1] / 256
+                flow[:, 1, :, :] = flow[:, 1, :, :] * hw[0] / 256
                 
             return {'latents': latents, 'flow_preds': flow, "flow_upsampled": flow}
