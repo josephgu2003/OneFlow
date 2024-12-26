@@ -5,3 +5,7 @@ NUM_HEADS: 8
 DECODER_BLOCKS: 4
 DINO_PATH: /home/gu.jo/.cache/torch/hub/checkpoints/dinov2_vits14_reg4_pretrain.pth
 SCALER: 1
+BLOCK_CLASS: ConcatenateDecoderBlock
+ENCODER_CONCAT: True
+REPARAM: True
+
