@@ -15,6 +15,7 @@ from ezflow.utils.invert_flow import reparameterize
 def simple_interpolate(x, size):
     return torch.nn.functional.interpolate(x, size=size, mode='bilinear')
 
+calibration = [384, 512] # x y 
 @MODEL_REGISTRY.register()
 class Dino(BaseModule):
     def __init__(self, cfg):
@@ -64,7 +65,7 @@ class Dino(BaseModule):
         imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
         return imgs
     
-    def forward(self, both_img):        
+    def forward(self, both_img):      
         hw = both_img.shape[2:]
         both_img = simple_interpolate(both_img, size=(448 * self.scaler, 448 * self.scaler)) # TODO: fix
 
@@ -97,10 +98,15 @@ class Dino(BaseModule):
 
         if self.reparam:
             flow = reparameterize(q[:, :2, :, :], hw)
+            # flow is in normalized coords 0-1
         else:
             flow = torch.nn.functional.interpolate(q[:, :2, :, :], size=hw, mode='bilinear', align_corners=True)
-            
-        #var = simple_interpolate(flow[:, -1:, :, :], size=hw)
+            # flow is in normalized coords 0-1
+        
+        h, w = hw[0], hw[1]
+        wh = torch.tensor([w / calibration[0], h / calibration[1]], device=q.device).unsqueeze(-1).unsqueeze(-1).unsqueeze(0)
+        flow = flow * wh
+        # var will be wrong at eval time due to calibration issue    
         var = torch.nn.functional.interpolate(q[:, -1:, :, :], size=hw, mode='bilinear', align_corners=True)
 
         return {'flow_preds': flow, "flow_upsampled": flow, 'var': var}

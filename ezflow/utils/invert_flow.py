@@ -4,12 +4,12 @@ import torch
 def reparameterize(x, hw):
     h, w = hw[0], hw[1]
     x = torch.nn.functional.interpolate(x, size=hw, mode='bilinear', align_corners=True)
-    hs = torch.arange(h, device=x.device)
-    ws = torch.arange(w, device=x.device)
+    hs = torch.arange(h, device=x.device, dtype=x.dtype) / h
+    ws = torch.arange(w, device=x.device, dtype=x.dtype) / w
     
-    wh = torch.tensor(hw[::-1], device=x.device).unsqueeze(-1).unsqueeze(-1).unsqueeze(0)
+ #   wh = torch.tensor(hw[::-1], device=x.device).unsqueeze(-1).unsqueeze(-1).unsqueeze(0)
     # flow is xy, hmm is this correct?
-    flow = (x[:, :2, :, :] + 0.5) * wh - torch.stack(torch.meshgrid(hs, ws, indexing='ij')[::-1])
+    flow = (x[:, :2, :, :] + 0.5) - torch.stack(torch.meshgrid(hs, ws, indexing='ij')[::-1])
     return flow 
 
 def invert_flow(flow):
