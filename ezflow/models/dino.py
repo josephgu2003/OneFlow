@@ -99,6 +99,8 @@ class Dino(BaseModule):
             flow = reparameterize(q[:, :2, :, :], hw)
         else:
             flow = torch.nn.functional.interpolate(q[:, :2, :, :], size=hw, mode='bilinear', align_corners=True)
+            wh = torch.tensor(hw[::-1], device=x.device).unsqueeze(-1).unsqueeze(-1).unsqueeze(0)
+            flow = (flow + 0.5) * wh
             
         #var = simple_interpolate(flow[:, -1:, :, :], size=hw)
         var = torch.nn.functional.interpolate(q[:, -1:, :, :], size=hw, mode='bilinear', align_corners=True)
