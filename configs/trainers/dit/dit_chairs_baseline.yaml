@@ -1,6 +1,6 @@
 _BASE_: "../_base_/chairs_baseline.yaml"
 DATA:
-  BATCH_SIZE: 4
+  BATCH_SIZE: 16
   NUM_WORKERS: 12
   NORM_PARAMS: {"use": True, "mean":[127.5, 127.5, 127.5], "std":[127.5, 127.5, 127.5]}
   APPEND_VALID_MASK: True
@@ -31,9 +31,9 @@ SCHEDULER:
     div_factor: 250
 CRITERION:
   CUSTOM: True
-  NAME: MultiScaleLossUncertain
+  NAME: MultiScaleLoss
   PARAMS:
-    norm: "l2" 
+    norm: "l1" 
     weights: [1.0]
     average: "mean"
     resize_flow: "upsample"
