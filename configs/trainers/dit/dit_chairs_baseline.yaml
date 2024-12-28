@@ -7,17 +7,24 @@ DATA:
   TRAIN_DATASET:
     FlyingChairs:
       AUGMENTATION:
-        USE: False
+        USE: True
+        PARAMS:
+          color_aug_params: {"enabled": False}
+          eraser_aug_params: {"enabled": False}
+          noise_aug_params: {"enabled": False}
+          flip_aug_params: {"enabled": False}
+          spatial_aug_params: {"enabled": True}
+          advanced_spatial_aug_params: {"enabled": False}
       CROP: 
-        USE: False
-        SIZE: [256, 256]
+        USE: True
+        SIZE: [384, 384]
         TYPE: "random"
   VAL_DATASET:
     FlyingChairs:
       PADDING: 1
       CROP: 
         USE: True
-        SIZE: [256, 256]
+        SIZE: [384, 384]
         TYPE: "center"
 SCHEDULER:
   USE: True
