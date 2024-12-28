@@ -15,6 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from ezflow.data import DataloaderCreator
 from ezflow.utils import invert_flow
+from ezflow.utils.optim_stats import layer_stats, model_stats
 
 from ..functional import FUNCTIONAL_REGISTRY
 from ..utils import AverageMeter, endpointerror, find_free_port, is_port_available
@@ -297,12 +298,18 @@ class BaseTrainer:
         self.scaler.scale(loss).backward()
         self.scaler.unscale_(self.optimizer)
 
-        if current_iter > 500 and current_iter % self.cfg.LOG_ITERATIONS_INTERVAL == 0 and self._is_main_process():
+        if current_iter % self.cfg.LOG_ITERATIONS_INTERVAL == 0 and self._is_main_process():
             #for tag, parm in self.model.named_parameters():
              #   if parm.grad is not None:
             #        self.writer.add_histogram(tag + "_weight", parm.data.cpu().numpy(), current_iter)
              #       self.writer.add_histogram(tag, parm.grad.data.cpu().numpy(), current_iter)
+             
+            module = self.model.module if self.model_parallel else self.model
             self.writer.add_scalar('lr', self.optimizer.param_groups[0]['lr'], current_iter)
+            self.writer.add_scalar('avg_weight_norm', model_stats(module), current_iter)
+            patcher_weight_norm, patcher_grad_norm = layer_stats(module, 'patch_embed.proj.weight')
+            self.writer.add_scalar('patcher_weight_norm', patcher_weight_norm, current_iter)
+            self.writer.add_scalar('patcher_grad_norm', patcher_grad_norm, current_iter)
      
         if self.cfg.GRAD_CLIP.USE is True:
             grad = nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.GRAD_CLIP.VALUE)
