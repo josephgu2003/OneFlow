@@ -273,6 +273,8 @@ class BaseTrainer:
             self.writer.close()
 
     def _run_step(self, inp, target, current_iter, **kwargs):
+        self.optimizer.train()
+
         inp, target = self._to_device(inp, target)
         img1, img2 = inp
 
@@ -351,6 +353,7 @@ class BaseTrainer:
                 )
 
     def _validate_model(self, iter_type, iterations, **kwargs):
+        self.optimizer.eval()
         self.model.eval()
         metric_meter = AverageMeter()
         loss_meter = AverageMeter()
@@ -416,6 +419,8 @@ class BaseTrainer:
         return endpointerror(flow_pred, flow_gt)
 
     def _save_checkpoints(self, ckpt_type, ckpt_number):
+        self.optimizer.eval()
+
         if self.model_parallel:
             save_model = self.model.module
         else:
