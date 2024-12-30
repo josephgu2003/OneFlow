@@ -2,6 +2,7 @@ from functools import partial
 import torch 
 import torch.nn as nn
 
+from ezflow.decoder.dpt import DPTHead
 from ezflow.encoder.dinov2.backbones import dinov2_vits14_reg
 from ezflow.encoder.dinov2.block import Block
 from ezflow.encoder.dinov2.native_attention import NativeAttention
@@ -31,6 +32,8 @@ class Dino(BaseModule):
         self.decoder_blocks = nn.ModuleList([
             block_class(cfg.HIDDEN_SIZE, cfg.NUM_HEADS) for _ in range(cfg.DECODER_BLOCKS)
         ])
+        self.depth_head = DPTHead(3, 768, 256, False, use_clstoken=False)
+        
         self.init_weights()
         self.vits16 = dinov2_vits14_reg(block_fn=partial(Block, attn_class=NativeAttention))
         
@@ -88,13 +91,16 @@ class Dino(BaseModule):
         x2 = x1x2[1][:, 1+4:]
         
         q = x1
-        
+       
+        features = [] 
         for block in self.decoder_blocks:
             q = block(q, x1, x2, None)
+            features.append([q])
             
-        q = self.final_layer(q) 
-        q = self.unpatchify(q)
+        patch_h, patch_w = 32, 32
 
+        q = self.depth_head(features, patch_h, patch_w)
+        
         if self.reparam:
             flow = reparameterize(q[:, :2, :, :], hw)
         else:
