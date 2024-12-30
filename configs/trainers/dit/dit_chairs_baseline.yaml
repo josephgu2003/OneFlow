@@ -1,6 +1,6 @@
 _BASE_: "../_base_/chairs_baseline.yaml"
 DATA:
-  BATCH_SIZE: 16
+  BATCH_SIZE: 32
   NUM_WORKERS: 12
   NORM_PARAMS: {"use": True, "mean":[127.5, 127.5, 127.5], "std":[127.5, 127.5, 127.5]}
   APPEND_VALID_MASK: True

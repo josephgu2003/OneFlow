@@ -1,0 +1,7 @@
+_BASE_: "./dit_chairs_baseline.yaml"
+DISTRIBUTED:
+  USE: True
+  WORLD_SIZE: 2
+MIXED_PRECISION: True
+DATA:
+  NUM_WORKERS: 24

@@ -281,11 +281,12 @@ class BaseTrainer:
 
         with autocast(device_type='cuda', enabled=self.cfg.MIXED_PRECISION, dtype=torch.bfloat16):
             with torch.no_grad():
-                both_img = torch.concat((img1, img2, img2, img1), dim=0)
-                inv_flow, mask = invert_flow.invert_flow(target['flow_gt'])
-                target['flow_gt'] = torch.concat((target['flow_gt'], inv_flow))
+                both_img = torch.concat((img1, img2), dim=0)
+               # inv_flow, mask = invert_flow.invert_flow(target['flow_gt'])
+          #      target['flow_gt'] = torch.concat((target['flow_gt'], inv_flow))
              #   target['gt_latents'] = self.model.module.encode_flow(target['flow_gt'])
-                target['my_mask'] = torch.concat((torch.ones_like(mask), mask))
+          #      target['my_mask'] = torch.concat((torch.ones_like(mask), mask))
+                target['my_mask'] = torch.ones_like(target['flow_gt'][:, 0, :, :])
 
             output = self.model(both_img)
             
