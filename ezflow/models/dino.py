@@ -64,7 +64,8 @@ class Dino(BaseModule):
         imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
         return imgs
     
-    def forward(self, both_img):        
+    def forward(self, img1, img2):
+        both_img = torch.concat((img1, img2))        
         hw = both_img.shape[2:]
         both_img = simple_interpolate(both_img, size=(448 * self.scaler, 448 * self.scaler)) # TODO: fix
 
