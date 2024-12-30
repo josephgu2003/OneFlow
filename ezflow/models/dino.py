@@ -84,8 +84,8 @@ class Dino(BaseModule):
         x = self.proj(x)
         
         x1x2 = torch.chunk(x, 2, dim=1 if self.encoder_concat else 0)
-        x1 = x1x2[0][:, 1+4:] + self.pos_embed
-        x2 = x1x2[1][:, 1+4:] + self.pos_embed
+        x1 = x1x2[0][:, 1+4:]
+        x2 = x1x2[1][:, 1+4:]
         
         q = x1
         
