@@ -21,6 +21,9 @@ loss_functions.register(CrossEntropyLoss, "CrossEntropyLoss")
 loss_functions.register(MSELoss, "MSELoss")
 loss_functions.register(L1Loss, "L1Loss")
 
+from .sadamw import AdamWScheduleFree
+
+optimizers.register(AdamWScheduleFree, "AdamWScheduleFree")
 optimizers.register(SGD, "SGD")
 optimizers.register(Adam, "Adam")
 optimizers.register(AdamW, "AdamW")

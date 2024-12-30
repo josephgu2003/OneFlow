@@ -27,7 +27,7 @@ DATA:
         SIZE: [384, 384]
         TYPE: "center"
 SCHEDULER:
-  USE: True
+  USE: False
   NAME: OneCycleLR
   PARAMS:
     max_lr: 0.0001
