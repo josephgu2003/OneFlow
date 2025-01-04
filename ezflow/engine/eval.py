@@ -9,6 +9,7 @@ from tqdm import tqdm
 from ..utils import AverageMeter, InputPadder, endpointerror
 from .profiler import Profiler
 
+import torchshow
 
 def warmup(model, dataloader, device, pad_divisor=1):
     """Performs an iteration of dataloading and model prediction to warm up CUDA device
@@ -76,7 +77,7 @@ def run_inference(model, dataloader, device, metric_fn, flow_scale=1.0, pad_divi
 
     with torch.no_grad():
 
-        for inp, target in tqdm(dataloader):
+        for i, (inp, target) in tqdm(enumerate(dataloader)):
 
             img1, img2 = inp
             img1, img2 = img1.to(device), img2.to(device)
@@ -107,6 +108,12 @@ def run_inference(model, dataloader, device, metric_fn, flow_scale=1.0, pad_divi
                 f1_list.append(f1)
 
             metric_meter.update(metric, n=batch_size)
+
+            if i % 8 == 0:
+                torchshow.save(img1[0])
+                torchshow.save(img2[0])
+                torchshow.save(target['flow_gt'][0])
+                torchshow.save(output['flow_upsampled'][0])
 
     avg_inference_time = sum(times) / len(times)
     avg_inference_time /= batch_size  # Average inference time per sample
