@@ -281,13 +281,13 @@ class BaseTrainer:
 
         with autocast(device_type='cuda', enabled=self.cfg.MIXED_PRECISION, dtype=torch.bfloat16):
             with torch.no_grad():
-                both_img = torch.concat((img1, img2, img2, img1), dim=0)
+                img1, img2 = torch.concat((img1, img2)), torch.concat((img2, img1))
                 inv_flow, mask = invert_flow.invert_flow(target['flow_gt'])
                 target['flow_gt'] = torch.concat((target['flow_gt'], inv_flow))
              #   target['gt_latents'] = self.model.module.encode_flow(target['flow_gt'])
                 target['my_mask'] = torch.concat((torch.ones_like(mask), mask))
 
-            output = self.model(both_img)
+            output = self.model(img1, img2)
             
 
             loss = self.loss_fn(**output, **target, **kwargs)
@@ -360,13 +360,10 @@ class BaseTrainer:
                 inp, target = self._to_device(inp, target)
                 img1, img2 = inp
 
-#
-                both_img = torch.concat((img1, img2), dim=0)
-
                 if self.model_parallel:
-                    output = self.model(both_img)
+                    output = self.model(img1, img2)
                 else:
-                    output = self.model(both_img)
+                    output = self.model(img1, img2)
                     
                 import torchshow 
                 
