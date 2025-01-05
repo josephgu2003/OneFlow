@@ -11,6 +11,7 @@ from ezflow.models.dit import get_2d_sincos_pos_embed
 from ezflow.modules.decoder import DecoderBlock, ConcatenateDecoderBlock
 from ezflow.modules.base_module import BaseModule 
 from ezflow.utils.invert_flow import reparameterize
+from ezflow.decoder.dpt import DPTHead
 
 def simple_interpolate(x, size):
     return torch.nn.functional.interpolate(x, size=size, mode='bilinear')
@@ -22,15 +23,18 @@ class Dino(BaseModule):
         self.scaler = cfg.SCALER
         self.hidden_size = cfg.HIDDEN_SIZE
         self.proj = nn.Linear(384, cfg.HIDDEN_SIZE)
-        self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, 3)
+        # self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, 3)
+        self.dpt = DPTHead(cfg.HIDDEN_SIZE)
         num_patches = 32 * 32 * self.scaler * self.scaler
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, cfg.HIDDEN_SIZE), requires_grad=False)
         
         block_classes = {'DecoderBlock': DecoderBlock, 'ConcatenateDecoderBlock': ConcatenateDecoderBlock}
         block_class = block_classes[cfg.BLOCK_CLASS]
+        assert cfg.DECODER_BLOCKS % 4 == 0
         self.decoder_blocks = nn.ModuleList([
             block_class(cfg.HIDDEN_SIZE, cfg.NUM_HEADS) for _ in range(cfg.DECODER_BLOCKS)
         ])
+        self.out_indices = list([i for i in range(0, cfg.DECODER_BLOCKS, cfg.DECODER_BLOCKS // 4)])
         self.init_weights()
         self.vits16 = dinov2_vits14_reg(block_fn=partial(Block, attn_class=NativeAttention))
         
@@ -90,11 +94,14 @@ class Dino(BaseModule):
         
         q = x1
         
-        for block in self.decoder_blocks:
+        feats = []
+        for i, block in enumerate(self.decoder_blocks):
             q = block(q, x1, x2, None)
             
-        q = self.final_layer(q) 
-        q = self.unpatchify(q)
+            if i in self.out_indices:
+                feats.append([q])
+            
+        q = self.dpt(feats, 32, 32, 448, 448)
 
         if self.reparam:
             flow = reparameterize(q[:, :2, :, :], hw)
