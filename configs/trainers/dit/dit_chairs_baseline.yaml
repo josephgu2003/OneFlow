@@ -8,13 +8,6 @@ DATA:
     FlyingChairs:
       AUGMENTATION:
         USE: True
-        PARAMS:
-          color_aug_params: {"enabled": False}
-          eraser_aug_params: {"enabled": False}
-          noise_aug_params: {"enabled": False}
-          flip_aug_params: {"enabled": False}
-          spatial_aug_params: {"enabled": True}
-          advanced_spatial_aug_params: {"enabled": False}
       CROP: 
         USE: True
         SIZE: [384, 384]
