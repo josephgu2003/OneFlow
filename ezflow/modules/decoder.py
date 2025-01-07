@@ -21,16 +21,14 @@ class DWConv(nn.Module):
         self.conv1 = torch.nn.Conv2d(
             in_features, in_features, kernel_size=kernel_size, padding=padding, groups=in_features)
         self.act = act_layer()
-        self.bn = nn.BatchNorm2d(in_features)
         self.conv2 = torch.nn.Conv2d(
             in_features, out_features, kernel_size=kernel_size, padding=padding, groups=out_features)
 
-    def forward(self, x, H: int, W: int):
+    def forward(self, x, H=32, W=32):
         B, N, C = x.shape
         x = x.permute(0, 2, 1).reshape(B, C, H, W)
         x = self.conv1(x)
         x = self.act(x)
-        x = self.bn(x)
 
 
         x = self.conv2(x)
@@ -69,7 +67,7 @@ class WierdMlp(nn.Module):
             if m.bias is not None:
                 m.bias.data.zero_()
 
-    def forward(self, x, H, W):
+    def forward(self, x, H=32, W=32):
         x = self.fc1(x)
         if self.linear:
             x = self.relu(x)
@@ -94,7 +92,7 @@ class ChannelProcessing(nn.Module):
 
         # config of mlp for v processing
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-        self.mlp_v = Mlp(in_features=dim//self.cha_sr_ratio, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
+        self.mlp_v = WierdMlp(in_features=dim//self.cha_sr_ratio, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop, linear=linear)
         self.norm_v = norm_layer(dim//self.cha_sr_ratio)
 
         self.q = nn.Linear(dim, dim, bias=qkv_bias)
