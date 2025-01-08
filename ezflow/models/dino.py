@@ -24,7 +24,7 @@ class Dino(BaseModule):
         self.hidden_size = cfg.HIDDEN_SIZE
         self.proj = nn.Linear(384, cfg.HIDDEN_SIZE)
         # self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, 3)
-        self.dpt = DPTHead(cfg.HIDDEN_SIZE)
+        self.dpt = DPTHead(384)
         num_patches = 32 * 32 * self.scaler * self.scaler
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, cfg.HIDDEN_SIZE), requires_grad=False)
         
@@ -82,25 +82,13 @@ class Dino(BaseModule):
         
             x = torch.concat((img1, img2), dim=1)
         
-        for blk in self.vits16.blocks:
-            x = blk(x)
-        x = self.vits16.norm(x)
-        
-        x = self.proj(x)
-        
-        x1x2 = torch.chunk(x, 2, dim=1 if self.encoder_concat else 0)
-        x1 = x1x2[0][:, 1+4:]
-        x2 = x1x2[1][:, 1+4:]
-        
-        q = x1
-        
         feats = []
-        for i, block in enumerate(self.decoder_blocks):
-            q = block(q, x1, x2, None)
-            
-            if i in self.out_indices:
-                feats.append([q])
-            
+        for i, blk in enumerate(self.vits16.blocks):
+            x = blk(x)
+           
+            if i in [2, 5, 8, 11]:
+                feats.append([x[:, 1+4:1+4+32*32]])
+        
         q = self.dpt(feats, 32, 32, 448, 448)
 
         if self.reparam:
