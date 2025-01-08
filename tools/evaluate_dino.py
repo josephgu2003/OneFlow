@@ -3,7 +3,7 @@ from ezflow.engine import eval_model
 from ezflow.engine.tiled_model import TiledModel
 from ezflow.models import build_model
 
-log_folder = 'dpt'
+log_folder = 'dino_l/cont'
 if __name__ == "__main__":
     model = build_model(
         "Dino",

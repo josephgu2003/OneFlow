@@ -365,14 +365,14 @@ def vit_base(patch_size=16, num_register_tokens=0, **kwargs):
     return model
 
 
-def vit_large(patch_size=16, num_register_tokens=0, **kwargs):
+def vit_large(patch_size=16, num_register_tokens=0, block_fn=partial(Block, attn_class=MemEffAttention), **kwargs):
     model = DinoVisionTransformer(
         patch_size=patch_size,
         embed_dim=1024,
         depth=24,
         num_heads=16,
         mlp_ratio=4,
-        block_fn=partial(Block, attn_class=MemEffAttention),
+        block_fn=block_fn,
         num_register_tokens=num_register_tokens,
         **kwargs,
     )

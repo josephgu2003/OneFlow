@@ -2,7 +2,7 @@ from functools import partial
 import torch 
 import torch.nn as nn
 
-from ezflow.encoder.dinov2.backbones import dinov2_vits14_reg
+from ezflow.encoder.dinov2.backbones import dinov2_vitl14_reg, dinov2_vits14_reg
 from ezflow.encoder.dinov2.block import Block
 from ezflow.encoder.dinov2.native_attention import NativeAttention
 from ezflow.encoder.dinov2.vision_transformer import DinoVisionTransformer, vit_small
@@ -22,7 +22,7 @@ class Dino(BaseModule):
         super().__init__()
         self.scaler = cfg.SCALER
         self.hidden_size = cfg.HIDDEN_SIZE
-        self.proj = nn.Linear(384, cfg.HIDDEN_SIZE)
+        self.proj = nn.Linear(1024, cfg.HIDDEN_SIZE)
         # self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, 3)
         self.dpt = DPTHead(cfg.HIDDEN_SIZE)
         num_patches = 32 * 32 * self.scaler * self.scaler
@@ -36,7 +36,7 @@ class Dino(BaseModule):
         ])
         self.out_indices = list([i for i in range(0, cfg.DECODER_BLOCKS, cfg.DECODER_BLOCKS // 4)])
         self.init_weights()
-        self.vits16 = dinov2_vits14_reg(block_fn=partial(Block, attn_class=NativeAttention))
+        self.vits16 = dinov2_vitl14_reg(block_fn=partial(Block, attn_class=NativeAttention))
         
         self.encoder_concat = cfg.ENCODER_CONCAT 
         self.reparam = cfg.REPARAM
