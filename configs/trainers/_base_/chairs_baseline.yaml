@@ -6,7 +6,7 @@ DATA:
   INIT_SEED: False
   DROP_LAST: True
   TRAIN_DATASET:
-    FlyingChairs:
+    AutoFlow:
       ROOT_DIR: "./Datasets/FlyingChairs_release/data"
       SPLIT: "training"
       IS_PREDICTION: False
@@ -61,9 +61,10 @@ DATA:
             "enable_out_of_boundary_crop": False
           }
   VAL_DATASET:
-    FlyingChairs:
+    MPISintel:
       ROOT_DIR: "./Datasets/FlyingChairs_release/data"
-      SPLIT: "validation"
+      SPLIT: "training"
+      DS_TYPE: "final"
       APPEND_VALID_MASK: False
       IS_PREDICTION: False
       PADDING: 1

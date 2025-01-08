@@ -83,8 +83,8 @@ class AutoFlow(BaseDataset):
         scenes = [
             "static_40k_png_1_of_4",
             "static_40k_png_2_of_4",
-            "static_40k_png_2_of_4",
-            "static_40k_png_2_of_4",
+            "static_40k_png_3_of_4",
+            "static_40k_png_4_of_4",
         ]
 
         for scene in scenes:
