@@ -23,7 +23,7 @@ SCHEDULER:
   USE: True
   NAME: OneCycleLR
   PARAMS:
-    max_lr: 0.0001
+    max_lr: 0.00003
     total_steps: 100100
     pct_start: 0.05
     cycle_momentum: False

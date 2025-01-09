@@ -528,13 +528,6 @@ class BaseTrainer:
 
         self._setup_training()
 
-        self.optimizer.load_state_dict(optimizer_state_dict)
-        print("Optimizer state loaded!!")
-
-        if self.scheduler is not None:
-            self.scheduler.load_state_dict(scheduler_state_dict)
-            print("Scheduler state loaded!!")
-
         if total_iterations is None and use_cfg:
             total_iterations = (
                 self.cfg.RESUME_TRAINING.NUM_STEPS
@@ -934,7 +927,7 @@ class DistributedTrainer(BaseTrainer):
 
         # synchronizes all the threads to reach this point before moving on
         dist.barrier()
-        self._trainer(total_iterations, start_iteration)
+        self._trainer(total_iterations, 0)
 
         if self._is_main_process():
             print("\nTraining complete!")
