@@ -8,13 +8,13 @@ DATA:
   DROP_LAST: True
   TRAIN_DATASET:
     FlyingThings3DClean: &TRAIN_DS_CONFIG
-      ROOT_DIR: "./Datasets/SceneFlow/FlyingThings3D"
+      ROOT_DIR: "/work/vig/Datasets/SceneFlow/FlyingThings3D"
       SPLIT: "training"
       IS_PREDICTION: False
       APPEND_VALID_MASK: False
       CROP: 
         USE: True
-        SIZE: [384, 768]
+        SIZE: [384, 384]
         TYPE: "random"
       FLOW_OFFSET_PARAMS: {"use": False}
       AUGMENTATION:
@@ -63,15 +63,16 @@ DATA:
           }
     FlyingThings3DFinal: *TRAIN_DS_CONFIG
   VAL_DATASET:
-    FlyingThings3DClean: &VAL_DS_CONFIG
-      ROOT_DIR: "./Datasets/SceneFlow/FlyingThings3D"
-      SPLIT: "validation"
+    MPISintel:
+      ROOT_DIR: "./Datasets/FlyingChairs_release/data"
+      SPLIT: "training"
+      DS_TYPE: "final"
       APPEND_VALID_MASK: False
       IS_PREDICTION: False
       PADDING: 1
       CROP: 
         USE: True
-        SIZE: [384, 768]
+        SIZE: [384, 448]
         TYPE: "center"
       FLOW_OFFSET_PARAMS: {"use": False}
       AUGMENTATION:
@@ -82,8 +83,7 @@ DATA:
           noise_aug_params: {"enabled": False}
           flip_aug_params: {"enabled": False}
           spatial_aug_params: {"enabled": False}
-          advanced_spatial_aug_params: {"enabled": False}
-    FlyingThings3DFinal: *VAL_DS_CONFIG
+          advanced_spatial_aug_params: {"enabled": False}        
 OPTIMIZER:
   NAME: AdamW
   LR: 0.000125
@@ -101,6 +101,7 @@ MIXED_PRECISION: False
 DEVICE: "0"
 DISTRIBUTED:
   USE: False
+  SYNC_BATCH_NORM: True
   WORLD_SIZE: 2
   BACKEND: nccl
   MASTER_ADDR: localhost

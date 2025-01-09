@@ -6,8 +6,8 @@ def main(args):
     if args.device:
         cfg.DEVICE = args.device
 
-    if args.train_ds is not None and args.train_data_dir is not None:
-        cfg.DATA.TRAIN_DATASET[args.train_ds].ROOT_DIR = args.train_data_dir
+    cfg.DATA.TRAIN_DATASET['FlyingThings3DClean'].ROOT_DIR = args.train_data_dir
+    cfg.DATA.TRAIN_DATASET['FlyingThings3DFinal'].ROOT_DIR = args.train_data_dir
 
     if args.val_ds is not None and args.val_data_dir is not None:
         cfg.DATA.VAL_DATASET[args.val_ds].ROOT_DIR = args.val_data_dir
