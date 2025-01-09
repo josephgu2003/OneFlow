@@ -4,6 +4,29 @@ import numpy as np
 import torchshow
 import random
 
+import torch.nn.functional as F
+
+
+def create_center_weighted_tensor(input_tensor):
+    # Get the shape of the input tensor
+    B, C, H, W = input_tensor.shape
+    
+    # Create coordinate grids for height and width
+    y_coords = torch.linspace(-1, 1, H, device=input_tensor.device).view(H, 1).expand(H, W)
+    x_coords = torch.linspace(-1, 1, W, device=input_tensor.device).view(1, W).expand(H, W)
+    
+    # Compute the distance from the center for each pixel
+    distance_from_center = torch.sqrt(x_coords**2 + y_coords**2)
+    
+    # Normalize the distance so the center has weight 1 and borders have weight 0
+    weights = 1 - distance_from_center / torch.max(distance_from_center)
+    weights = weights.clamp(min=0)  # Ensure no negative weights
+    
+    # Expand the weights to match the input shape
+    weights = weights.unsqueeze(0).unsqueeze(0).expand(B, C, H, W)
+    
+    return weights + 1e-2
+
 @torch.no_grad()
 def tiled_pred(model, img1, img2, overlap=0.5, crop=512):     
     # for each image, we are going to run inference on many overlapping patches
@@ -23,10 +46,11 @@ def tiled_pred(model, img1, img2, overlap=0.5, crop=512):
 
     for sy1, sx1, sy2, sx2, aligned in crop_generator():
         # compute optical flow there
-        pred =  model(_crop(img1,sy1,sx1), _crop(img2,sy2,sx2))['flow_upsampled']
-                        
-        accu_pred[...,sy1,sx1] += pred
-        accu_conf[...,sy1,sx1] += 1
+        pred =  model(_crop(img1,sy1,sx1), _crop(img2,sy2,sx2))['flow_upsampled'] # b 2 h w
+        weights = create_center_weighted_tensor(pred)
+ 
+        accu_pred[...,sy1,sx1] += pred * weights
+        accu_conf[...,sy1,sx1] += weights[:, 0, :, :]
         
     pred = accu_pred / accu_conf[:, None,:,:]
     assert not torch.any(torch.isnan(pred))
