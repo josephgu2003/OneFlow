@@ -8,6 +8,7 @@ def main(args):
 
     cfg.DATA.TRAIN_DATASET['FlyingThings3DClean'].ROOT_DIR = args.train_data_dir
     cfg.DATA.TRAIN_DATASET['FlyingThings3DFinal'].ROOT_DIR = args.train_data_dir
+    cfg.DATA.TRAIN_DATASET['FlyingChairs'].ROOT_DIR = '/work/vig/Datasets/FlyingChairs_release/data'
 
     if args.val_ds is not None and args.val_data_dir is not None:
         cfg.DATA.VAL_DATASET[args.val_ds].ROOT_DIR = args.val_data_dir

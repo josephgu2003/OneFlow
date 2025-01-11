@@ -32,7 +32,7 @@ def tiled_pred(model, img1, img2, overlap=0.5, crop=512):
     # for each image, we are going to run inference on many overlapping patches
     # then, all predictions will be weighted-averaged
     B, _, H, W = img1.shape
-    win_height, win_width = crop, crop + 512 // 2
+    win_height, win_width = crop, crop
 
     def crop_generator():
         for sy in _overlapping(H, win_height, overlap):

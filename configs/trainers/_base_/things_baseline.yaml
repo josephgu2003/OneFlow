@@ -61,6 +61,7 @@ DATA:
             "translate": 0.0,
             "enable_out_of_boundary_crop": False
           }
+    FlyingChairs: *TRAIN_DS_CONFIG
     FlyingThings3DFinal: *TRAIN_DS_CONFIG
   VAL_DATASET:
     MPISintel:
