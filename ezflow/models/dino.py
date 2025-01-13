@@ -12,6 +12,9 @@ from ezflow.modules.decoder import DecoderBlock, ConcatenateDecoderBlock
 from ezflow.modules.base_module import BaseModule 
 from ezflow.utils.invert_flow import reparameterize
 from ezflow.decoder.dpt import DPTHead
+from ezflow.encoder.croco.croco_downstream import CroCoDownstreamBinocular
+from ezflow.encoder.croco.croco import CroCoNet
+from ezflow.encoder.croco.head_downstream import PixelwiseTaskWithDPT
 
 def simple_interpolate(x, size):
     return torch.nn.functional.interpolate(x, size=size, mode='bilinear')
@@ -22,7 +25,7 @@ class Dino(BaseModule):
         super().__init__()
         self.scaler = cfg.SCALER
         self.hidden_size = cfg.HIDDEN_SIZE
-        self.proj = nn.Linear(384, cfg.HIDDEN_SIZE)
+        self.proj = nn.Linear(768, 384)
         # self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, 3)
         self.dpt = DPTHead(384)
         num_patches = 32 * 32 * self.scaler * self.scaler
@@ -36,7 +39,14 @@ class Dino(BaseModule):
         ])
         self.out_indices = list([i for i in range(0, cfg.DECODER_BLOCKS, cfg.DECODER_BLOCKS // 4)])
         self.init_weights()
-        self.vits16 = dinov2_vits14_reg(block_fn=partial(Block, attn_class=NativeAttention))
+        ckpt = torch.load('./pretrained_models/CroCo_V2_ViTBase_BaseDecoder.pth', 'cpu')
+        
+        model = CroCoNet( **ckpt.get('croco_kwargs',{}))
+    
+        msg = model.load_state_dict(ckpt['model'], strict=True)
+        print(msg)
+    
+        self.croco = model
         
         self.encoder_concat = cfg.ENCODER_CONCAT 
         self.reparam = cfg.REPARAM
@@ -73,7 +83,7 @@ class Dino(BaseModule):
         hw = both_img.shape[2:]
         both_img = simple_interpolate(both_img, size=(448 * self.scaler, 448 * self.scaler)) # TODO: fix
 
-        x = self.vits16.prepare_tokens_with_masks(both_img, None)
+        x, pos = self.croco.patch_embed(both_img)
        
         if self.encoder_concat: 
             x1x2 = torch.chunk(x, 2)
@@ -81,15 +91,15 @@ class Dino(BaseModule):
             img2 = x1x2[1]
         
             x = torch.concat((img1, img2), dim=1)
+            pos = torch.concat((torch.chunk(pos, 2)),dim=1)
         
         feats = []
-        for i, blk in enumerate(self.vits16.blocks):
-            x = blk(x)
-           
+        for i, blk in enumerate(self.croco.enc_blocks[:12]):
+            x = blk(x, pos)
             if i in [2, 5, 8, 11]:
-                feats.append([x[:, 1+4:1+4+32*32]])
-        
-        q = self.dpt(feats, 32, 32, 448, 448)
+                feats.append([self.proj(x[:,:x.size(1)//2])])
+
+        q = self.dpt(feats, 28, 28, 448, 448)
 
         if self.reparam:
             flow = reparameterize(q[:, :2, :, :], hw)
