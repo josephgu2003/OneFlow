@@ -253,7 +253,7 @@ class BaseTrainer:
 
             self._log_step(step, total_steps, loss_meter)
 
-            if step % self.cfg.VALIDATE_INTERVAL == 0 and self._is_main_process():
+            if step % self.cfg.VALIDATE_INTERVAL == 0:
                 self._validate_model(iter_type="Iteration", iterations=total_steps)
                 print("-" * 80)
 
@@ -307,9 +307,6 @@ class BaseTrainer:
             module = self.model.module if self.model_parallel else self.model
             self.writer.add_scalar('lr', self.optimizer.param_groups[0]['lr'], current_iter)
             self.writer.add_scalar('avg_weight_norm', model_stats(module), current_iter)
-            patcher_weight_norm, patcher_grad_norm = layer_stats(module, 'patch_embed.proj.weight')
-            self.writer.add_scalar('patcher_weight_norm', patcher_weight_norm, current_iter)
-            self.writer.add_scalar('patcher_grad_norm', patcher_grad_norm, current_iter)
      
         if self.cfg.GRAD_CLIP.USE is True:
             grad = nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.GRAD_CLIP.VALUE)
@@ -383,6 +380,7 @@ class BaseTrainer:
                 metric_meter.update(metric)
 
                 del output
+                dist.barrier()
 
         new_avg_val_loss, new_avg_val_metric = loss_meter.avg, metric_meter.avg
 

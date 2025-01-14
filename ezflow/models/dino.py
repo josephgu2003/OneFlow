@@ -12,6 +12,8 @@ from ezflow.modules.decoder import DecoderBlock, ConcatenateDecoderBlock
 from ezflow.modules.base_module import BaseModule 
 from ezflow.utils.invert_flow import reparameterize
 from ezflow.decoder.dpt import DPTHead
+from ezflow.models.fan import fan_small_12_p16_224
+from timm.models import load_checkpoint
 
 def simple_interpolate(x, size):
     return torch.nn.functional.interpolate(x, size=size, mode='bilinear')
@@ -24,7 +26,7 @@ class Dino(BaseModule):
         self.hidden_size = cfg.HIDDEN_SIZE
         # self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, 3)
         self.dpt = DPTHead(cfg.HIDDEN_SIZE)
-        num_patches = 32 * 32 * self.scaler * self.scaler
+        num_patches = 28 * 28 * self.scaler * self.scaler
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, cfg.HIDDEN_SIZE), requires_grad=False)
         
         block_classes = {'DecoderBlock': DecoderBlock, 'ConcatenateDecoderBlock': ConcatenateDecoderBlock}
@@ -40,8 +42,9 @@ class Dino(BaseModule):
             ])
             self.out_indices = list([i for i in range(0, cfg.DECODER_BLOCKS, cfg.DECODER_BLOCKS // 4)])
         self.init_weights()
-        self.vits16 = dinov2_vits14_reg(block_fn=partial(Block, attn_class=NativeAttention))
-        
+        self.vits16 = fan_small_12_p16_224(pretrained=False)
+        load_checkpoint(self.vits16, './pretrained_models/fan_vit_small.pth.tar', False) 
+
         self.encoder_concat = cfg.ENCODER_CONCAT 
         self.reparam = cfg.REPARAM
       
@@ -53,7 +56,7 @@ class Dino(BaseModule):
                     torch.nn.init.constant_(module.bias, 0)
         self.apply(_basic_init)
        
-        pos_embed = get_2d_sincos_pos_embed(self.hidden_size, grid_size=32 * self.scaler) 
+        pos_embed = get_2d_sincos_pos_embed(self.hidden_size, grid_size=28 * self.scaler) 
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
         
         
@@ -72,15 +75,19 @@ class Dino(BaseModule):
         imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
         return imgs
     
-    def _encode(self, x):
+    def _encode(self, x, Hp, Wp):
+        B = x.shape[0]
         feats = []
+        H, W = Hp, Wp
         for i, blk in enumerate(self.vits16.blocks):
+            blk.H, blk.W = H, W
             x = blk(x)
-
+            H, W = blk.H, blk.W
             if i in [2, 5, 8, 11]:
                 x1x2 = torch.chunk(x, 2, dim=1 if self.encoder_concat else 0)
-                x1 = x1x2[0][:, 1+4:]
+                x1 = x1x2[0]
                 feats.append([x1])
+ 
         return x, feats
 
     def _decode(self, x):
@@ -107,7 +114,15 @@ class Dino(BaseModule):
         hw = both_img.shape[2:]
         both_img = simple_interpolate(both_img, size=(448 * self.scaler, 448 * self.scaler)) # TODO: fix
 
-        x = self.vits16.prepare_tokens_with_masks(both_img, None)
+        B = both_img.shape[0]
+        x, (Hp, Wp) = self.vits16.patch_embed(both_img)
+
+        if self.vits16.use_pos_embed:
+            pos_encoding = self.vits16.pos_embed(B, Hp, Wp).reshape(B, -1, x.shape[1]).permute(0, 2, 1)
+            x = x + pos_encoding
+
+        x = self.vits16.pos_drop(x)
+
        
         if self.encoder_concat: 
             x1x2 = torch.chunk(x, 2)
@@ -116,12 +131,12 @@ class Dino(BaseModule):
         
             x = torch.concat((img1, img2), dim=1)
 
-        x, feats = self._encode(x)
+        x, feats = self._encode(x, Hp*2, Wp)
 
         if self.use_dec:
             feats = self._decode(x)
            
-        q = self.dpt(feats, 32, 32, 448, 448)
+        q = self.dpt(feats, 28, 28, 448, 448)
 
         if self.reparam:
             flow = reparameterize(q[:, :2, :, :], hw)
