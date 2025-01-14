@@ -22,7 +22,6 @@ class Dino(BaseModule):
         super().__init__()
         self.scaler = cfg.SCALER
         self.hidden_size = cfg.HIDDEN_SIZE
-        self.proj = nn.Linear(384, cfg.HIDDEN_SIZE)
         # self.final_layer = nn.Linear(cfg.HIDDEN_SIZE, 3)
         self.dpt = DPTHead(cfg.HIDDEN_SIZE)
         num_patches = 32 * 32 * self.scaler * self.scaler
@@ -31,10 +30,15 @@ class Dino(BaseModule):
         block_classes = {'DecoderBlock': DecoderBlock, 'ConcatenateDecoderBlock': ConcatenateDecoderBlock}
         block_class = block_classes[cfg.BLOCK_CLASS]
         assert cfg.DECODER_BLOCKS % 4 == 0
-        self.decoder_blocks = nn.ModuleList([
-            block_class(cfg.HIDDEN_SIZE, cfg.NUM_HEADS) for _ in range(cfg.DECODER_BLOCKS)
-        ])
-        self.out_indices = list([i for i in range(0, cfg.DECODER_BLOCKS, cfg.DECODER_BLOCKS // 4)])
+
+        self.use_dec = cfg.DECODER_BLOCKS > 0
+
+        if self.use_dec:
+            self.proj = nn.Linear(384, cfg.HIDDEN_SIZE)
+            self.decoder_blocks = nn.ModuleList([
+                block_class(cfg.HIDDEN_SIZE, cfg.NUM_HEADS) for _ in range(cfg.DECODER_BLOCKS)
+            ])
+            self.out_indices = list([i for i in range(0, cfg.DECODER_BLOCKS, cfg.DECODER_BLOCKS // 4)])
         self.init_weights()
         self.vits16 = dinov2_vits14_reg(block_fn=partial(Block, attn_class=NativeAttention))
         
@@ -68,22 +72,18 @@ class Dino(BaseModule):
         imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
         return imgs
     
-    def forward(self, img1, img2):
-        both_img = torch.concat((img1, img2))        
-        hw = both_img.shape[2:]
-        both_img = simple_interpolate(both_img, size=(448 * self.scaler, 448 * self.scaler)) # TODO: fix
-
-        x = self.vits16.prepare_tokens_with_masks(both_img, None)
-       
-        if self.encoder_concat: 
-            x1x2 = torch.chunk(x, 2)
-            img1 = x1x2[0] # TODO: img encoding??
-            img2 = x1x2[1]
-        
-            x = torch.concat((img1, img2), dim=1)
-        
-        for blk in self.vits16.blocks:
+    def _encode(self, x):
+        feats = []
+        for i, blk in enumerate(self.vits16.blocks):
             x = blk(x)
+
+            if i in [2, 5, 8, 11]:
+                x1x2 = torch.chunk(x, 2, dim=1 if self.encoder_concat else 0)
+                x1 = x1x2[0][:, 1+4:]
+                feats.append([x1])
+        return x, feats
+
+    def _decode(self, x):
         x = self.vits16.norm(x)
         
         x = self.proj(x)
@@ -100,7 +100,27 @@ class Dino(BaseModule):
             
             if i in self.out_indices:
                 feats.append([q])
-            
+        return feats
+ 
+    def forward(self, img1, img2):
+        both_img = torch.concat((img1, img2))        
+        hw = both_img.shape[2:]
+        both_img = simple_interpolate(both_img, size=(448 * self.scaler, 448 * self.scaler)) # TODO: fix
+
+        x = self.vits16.prepare_tokens_with_masks(both_img, None)
+       
+        if self.encoder_concat: 
+            x1x2 = torch.chunk(x, 2)
+            img1 = x1x2[0] # TODO: img encoding??
+            img2 = x1x2[1]
+        
+            x = torch.concat((img1, img2), dim=1)
+
+        x, feats = self._encode(x)
+
+        if self.use_dec:
+            feats = self._decode(x)
+           
         q = self.dpt(feats, 32, 32, 448, 448)
 
         if self.reparam:
