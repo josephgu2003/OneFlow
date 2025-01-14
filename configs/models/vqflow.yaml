@@ -1,0 +1,30 @@
+NAME: VQFlow 
+MIXED_PRECISION: False
+HIDDEN_SIZE: 384
+NUM_HEADS: 8
+DECODER_BLOCKS: 0
+DINO_PATH: /home/gu.jo/.cache/torch/hub/checkpoints/dinov2_vits14_reg4_pretrain.pth
+SCALER: 1
+BLOCK_CLASS: DecoderBlock
+ENCODER_CONCAT: True
+REPARAM: False
+
+
+model:
+  base_learning_rate: 4.5e-6
+  target: ezflow.decoder.vq.vqgan.VQModel
+  params:
+    embed_dim: 256
+    n_embed: 16384
+    ddconfig:
+      double_z: False
+      z_channels: 256
+      resolution: 256
+      in_channels: 3
+      out_ch: 3
+      ch: 128
+      ch_mult: [ 1,1,2,2,4]  # num_down = len(ch_mult)-1
+      num_res_blocks: 2
+      attn_resolutions: [16]
+      dropout: 0.0
+    ckpt_path: './pretrained_models/last.ckpt'

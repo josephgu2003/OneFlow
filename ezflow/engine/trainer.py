@@ -284,7 +284,9 @@ class BaseTrainer:
                 img1, img2 = torch.concat((img1, img2)), torch.concat((img2, img1))
                 inv_flow, mask = invert_flow.invert_flow(target['flow_gt'])
                 target['flow_gt'] = torch.concat((target['flow_gt'], inv_flow))
-                target['gt_latents'] = self.model.encode_flow(target['flow_gt'])
+                module = self.model.module if self.model_parallel else self.model
+                if hasattr(module, 'encode_flow'): # !!
+                    target['gt_latents'] = module.encode_flow(target['flow_gt'])
                 target['my_mask'] = torch.concat((torch.ones_like(mask), mask))
 
             output = self.model(img1, img2)
@@ -372,7 +374,9 @@ class BaseTrainer:
                     with torch.no_grad():
                         torchshow.save(output['flow_preds'][0, :2, :, :])
                     
-                target['gt_latents'] = self.model.encode_flow(target['flow_gt'])
+                module = self.model.module if self.model_parallel else self.model
+                if hasattr(module, 'encode_flow'): # !!
+                    target['gt_latents'] = module.encode_flow(target['flow_gt'])
                 target['my_mask'] = torch.ones_like(target['flow_gt'][:, 0, :, :])
 
                 loss = self.loss_fn(**output, **target, **kwargs)

@@ -11,6 +11,7 @@ class _ModelZooConfigs:
         "DICL": "dicl.yaml",
         "DiT": "dit.yaml",
         "Dino": "dino.yaml",
+        "VQFlow": "vqflow.yaml",
         "DCVNet": "dcvnet.yaml",
         "PWCNet": "pwcnet.yaml",
         "VCN": "vcn.yaml",

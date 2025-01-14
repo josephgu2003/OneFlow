@@ -1,0 +1,58 @@
+_BASE_: "../_base_/chairs_baseline.yaml"
+DATA:
+  BATCH_SIZE: 16
+  NUM_WORKERS: 24
+  NORM_PARAMS: {"use": True, "mean":[127.5, 127.5, 127.5], "std":[127.5, 127.5, 127.5]}
+  APPEND_VALID_MASK: True
+  TRAIN_DATASET:
+    FlyingChairs:
+      AUGMENTATION:
+        USE: True
+        PARAMS:
+          color_aug_params: {"enabled": False}
+          eraser_aug_params: {"enabled": False}
+          noise_aug_params: {"enabled": False}
+          flip_aug_params: {"enabled": False}
+          spatial_aug_params: {"enabled": True}
+          advanced_spatial_aug_params: {"enabled": False}
+      CROP: 
+        USE: True
+        SIZE: [384, 384]
+        TYPE: "random"
+  VAL_DATASET:
+    FlyingChairs:
+      PADDING: 1
+      CROP: 
+        USE: True
+        SIZE: [384, 384]
+        TYPE: "center"
+SCHEDULER:
+  USE: True
+  NAME: OneCycleLR
+  PARAMS:
+    max_lr: 0.0001
+    total_steps: 100100
+    pct_start: 0.05
+    cycle_momentum: False
+    anneal_strategy: linear
+    div_factor: 250
+CRITERION:
+  CUSTOM: True
+  NAME: VQLoss 
+  PARAMS:
+    norm: "l1" 
+    weights: [1.0]
+    average: "mean"
+    resize_flow: "upsample"
+EPOCHS: null
+NUM_STEPS: 100100
+LOG_DIR: "./logs"
+CKPT_DIR: "./ckpts"
+LOG_ITERATIONS_INTERVAL: 100
+CKPT_INTERVAL: 5000
+VALIDATE_INTERVAL: 3000
+VALIDATE_ON: metric
+DISTRIBUTED:
+  USE: True
+  WORLD_SIZE: 2
+MIXED_PRECISION: True
