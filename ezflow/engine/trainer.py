@@ -14,6 +14,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 
 from ezflow.data import DataloaderCreator
+from ezflow.engine.sam_on import SAM_ON
 from ezflow.utils import invert_flow
 from ezflow.utils.optim_stats import layer_stats, model_stats
 
@@ -106,7 +107,6 @@ class BaseTrainer:
             for param_group in optimizer.param_groups:
                 if 'weight_decay' in param_group:
                     print(f"Weight Decay: {param_group['weight_decay']}")
-
         if scheduler is None and self.scheduler is None:
 
             if self.cfg.SCHEDULER.USE:
@@ -128,6 +128,7 @@ class BaseTrainer:
 
         if self.optimizer is None:
             self.optimizer = optimizer
+            self.minimizer = SAM_ON(self.optimizer, self.model, rho=10.0, adaptive=False, only_norm=True)
 
         if self.scheduler is None:
             self.scheduler = scheduler
@@ -290,16 +291,18 @@ class BaseTrainer:
                 target['my_mask'] = torch.concat((torch.ones_like(mask), mask))
 
             output = self.model(img1, img2)
-            
-
             loss = self.loss_fn(**output, **target, **kwargs)
 
           #  del output
 
-        self.optimizer.zero_grad()
         self.scaler.scale(loss).backward()
-        self.scaler.unscale_(self.optimizer)
 
+        self.minimizer.ascent_step()
+        # Descent Step
+        output = self.model(img1, img2)
+        loss = self.loss_fn(**output, **target, **kwargs)
+        self.scaler.scale(loss).backward()
+                
         if current_iter % self.cfg.LOG_ITERATIONS_INTERVAL == 0 and self._is_main_process():
             #for tag, parm in self.model.named_parameters():
              #   if parm.grad is not None:
@@ -318,7 +321,7 @@ class BaseTrainer:
             if self._is_main_process():
                 self.writer.add_scalar('grad_norm', grad.item(), current_iter)
 
-        self.scaler.step(self.optimizer)
+        self.minimizer.descent_step(scaler=self.scaler)
 
         if self.scheduler is not None:
             self.scheduler.step()
