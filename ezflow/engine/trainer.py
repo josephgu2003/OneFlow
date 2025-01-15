@@ -296,12 +296,13 @@ class BaseTrainer:
           #  del output
 
         self.scaler.scale(loss).backward()
-
+        self.scaler.unscale_(self.minimizer.optimizer)
         self.minimizer.ascent_step()
         # Descent Step
-        output = self.model(img1, img2)
-        loss = self.loss_fn(**output, **target, **kwargs)
-        self.scaler.scale(loss).backward()
+        with autocast(device_type='cuda', enabled=self.cfg.MIXED_PRECISION, dtype=torch.bfloat16):
+            output = self.model(img1, img2)
+            loss = self.loss_fn(**output, **target, **kwargs)
+        loss.backward()
                 
         if current_iter % self.cfg.LOG_ITERATIONS_INTERVAL == 0 and self._is_main_process():
             #for tag, parm in self.model.named_parameters():

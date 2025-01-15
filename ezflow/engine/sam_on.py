@@ -74,8 +74,7 @@ class ASAM_ON:
                 continue
             p.data = self.state[p]['old_p']
 
-        scaler.unscale_(self.optimizer)
-        scaler.step(self.optimizer)
+        self.optimizer.step()
         self.optimizer.zero_grad()
 
 class SAM_ON(ASAM_ON):
