@@ -83,7 +83,7 @@ class SAM_ON(ASAM_ON):
         grads = []
         for n, p in self.model.named_parameters():
             self.state[p]['old_p'] = p.data.clone()
-            if (p.grad is None) or (self.no_norm and ('norm' in n or 'bn' in n)) or (self.only_norm and 'norm' not in n and 'bn' not in n):
+            if (p.grad is None) or (self.no_norm and ('ls' in n or 'norm' in n or 'bn' in n)) or (self.only_norm and 'ls' not in n and 'norm' not in n and 'bn' not in n):
                 self.state[p]['perturbed']=False
                 continue
             self.state[p]['perturbed']=True

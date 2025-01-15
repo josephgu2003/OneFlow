@@ -128,7 +128,7 @@ class BaseTrainer:
 
         if self.optimizer is None:
             self.optimizer = optimizer
-            self.minimizer = SAM_ON(self.optimizer, self.model, rho=10.0, adaptive=False, only_norm=True)
+            self.minimizer = SAM_ON(self.optimizer, self.model, rho=0.5, adaptive=False, only_norm=True)
 
         if self.scheduler is None:
             self.scheduler = scheduler
