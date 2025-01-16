@@ -77,7 +77,7 @@ class Dino(BaseModule):
         for i, blk in enumerate(self.vits16.blocks):
             x = blk(x)
 
-            if i in [2, 5, 8, 11]:
+            if i in [11, 10, 9, 8]:
                 x1x2 = torch.chunk(x, 2, dim=1 if self.encoder_concat else 0)
                 x1 = x1x2[0][:, 1+4:]
                 feats.append([x1])
