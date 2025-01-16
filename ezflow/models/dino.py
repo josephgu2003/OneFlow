@@ -44,8 +44,6 @@ class Dino(BaseModule):
         
         self.encoder_concat = cfg.ENCODER_CONCAT 
         self.reparam = cfg.REPARAM
-        for p in self.vits16.patch_embed.parameters():
-            p.requires_grad_(False)
       
     def init_weights(self):
         def _basic_init(module):
