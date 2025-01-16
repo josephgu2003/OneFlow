@@ -9,10 +9,10 @@ DATA:
       AUGMENTATION:
         USE: True
         PARAMS:
-          color_aug_params: {"enabled": False}
-          eraser_aug_params: {"enabled": False}
-          noise_aug_params: {"enabled": False}
-          flip_aug_params: {"enabled": False}
+          color_aug_params: {"enabled": True}
+          eraser_aug_params: {"enabled": True}
+          noise_aug_params: {"enabled": True}
+          flip_aug_params: {"enabled": True}
           spatial_aug_params: {"enabled": True}
           advanced_spatial_aug_params: {"enabled": False}
       CROP: 
