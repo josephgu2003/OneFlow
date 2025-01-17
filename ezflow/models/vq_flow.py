@@ -56,6 +56,7 @@ class VQFlow(BaseModule):
             param.requires_grad_(False)
             
         self.vqgan.eval()
+        self.vq_dim = 256 * self.scaler
       
     def init_weights(self):
         def _basic_init(module):
@@ -86,9 +87,9 @@ class VQFlow(BaseModule):
     def encode_flow(self, flow_gt): 
         self.vqgan.eval()
         h, w = flow_gt.size(2), flow_gt.size(3)
-        flow = torch.nn.functional.interpolate(flow_gt, size=(256, 256), mode='bilinear', align_corners=True) / flow_scale
-        flow[:, 0, :, :] = flow[:, 0, :, :] * 256 / w
-        flow[:, 1, :, :] = flow[:, 1, :, :] * 256 / h
+        flow = torch.nn.functional.interpolate(flow_gt, size=(self.vq_dim, self.vq_dim), mode='bilinear', align_corners=True) / flow_scale
+        flow[:, 0, :, :] = flow[:, 0, :, :] * self.vq_dim / w
+        flow[:, 1, :, :] = flow[:, 1, :, :] * self.vq_dim / h
         
         return self.vqgan.encode(torch.concat((flow, torch.zeros_like(flow[:, 0:1, :, :])), dim=1))[-1][-1]
 
@@ -126,7 +127,7 @@ class VQFlow(BaseModule):
         self.vqgan.eval()
         both_img = torch.concat((img1, img2))        
         hw = both_img.shape[2:]
-        both_img = simple_interpolate(both_img, size=(224, 224)) # TODO: fix
+        both_img = simple_interpolate(both_img, size=(224 * self.scaler, 224 * self.scaler)) # TODO: fix
 
         x = self.vits16.prepare_tokens_with_masks(both_img, None)
        
@@ -155,8 +156,8 @@ class VQFlow(BaseModule):
                 z_q = self.vqgan.quantize.get_codebook_entry(q, shape=bhwc)
                 q = self.vqgan.decode(z_q)
                 flow = flow_scale * torch.nn.functional.interpolate(q[:, :2, :, :], size=hw, mode='bilinear', align_corners=True)
-                flow[:, 0, :, :] = flow[:, 0, :, :] * hw[1] / 256
-                flow[:, 1, :, :] = flow[:, 1, :, :] * hw[0] / 256
+                flow[:, 0, :, :] = flow[:, 0, :, :] * hw[1] / self.vq_dim
+                flow[:, 1, :, :] = flow[:, 1, :, :] * hw[0] / self.vq_dim
                 
             return {'latents': latents, 'flow_preds': flow, "flow_upsampled": flow}
         #var = simple_interpolate(flow[:, -1:, :, :], size=hw)
