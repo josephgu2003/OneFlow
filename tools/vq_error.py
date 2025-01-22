@@ -68,10 +68,11 @@ def vq_error(model, dataloader, device, metric_fn, flow_scale=1.0, pad_divisor=1
 
             start_time = time.time()
 
-            logits = model.model.encode_flow(target["flow_gt"])
+            logits, magits = model.model.encode_flow(target["flow_gt"])
             logits = logits.reshape(img1.shape[0], 16, 16)
+            magits = magits.reshape(img1.shape[0], 16, 16)
             bhwc = [logits.shape[0], logits.shape[1], logits.shape[2], model.model.embed_dim]
-            output = model.model.decode_flow(logits, bhwc, hw=img1.shape[-2:])
+            output = model.model.decode_flow(logits, magits, bhwc, hw=img1.shape[-2:])
 
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
@@ -86,8 +87,8 @@ def vq_error(model, dataloader, device, metric_fn, flow_scale=1.0, pad_divisor=1
             if "valid" in target:
                 metric, f1 = metric
                 f1_list.append(f1)
-            print(torch.mean(torch.abs(target['flow_gt'])))
-            print(torch.mean(torch.abs(pred)))
+            #print(torch.mean(torch.abs(target['flow_gt'])))
+            #print(torch.mean(torch.abs(pred)))
             metric_meter.update(metric, n=batch_size)
 
             if i % 8 == 0:

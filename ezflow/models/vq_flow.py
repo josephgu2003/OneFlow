@@ -29,7 +29,7 @@ class VQFlow(BaseModule):
         num_patches = 16 * 16 * self.scaler * self.scaler
         self.n_embed = cfg.model.params.n_embed
         self.embed_dim = cfg.model.params.embed_dim
-        self.final_layer = nn.Linear(384, self.n_embed)
+        self.final_layer = nn.Linear(384, self.n_embed * 2) # two way reparam
 
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, cfg.HIDDEN_SIZE), requires_grad=False)
         
@@ -75,7 +75,7 @@ class VQFlow(BaseModule):
         x: (N, T, patch_size**2 * C)
         imgs: (N, H, W, C)
         """
-        c = self.n_embed
+        c = self.n_embed * 2 # two way reparam
         p = 1
         h = w = int(x.shape[1] ** 0.5)
         assert h * w == x.shape[1]
@@ -87,11 +87,15 @@ class VQFlow(BaseModule):
     def encode_flow(self, flow_gt): 
         self.vqgan.eval()
         h, w = flow_gt.size(2), flow_gt.size(3)
-        flow = torch.nn.functional.interpolate(flow_gt, size=(self.vq_dim, self.vq_dim), mode='bilinear', align_corners=True) / flow_scale
-        flow[:, 0, :, :] = flow[:, 0, :, :] * self.vq_dim / w
-        flow[:, 1, :, :] = flow[:, 1, :, :] * self.vq_dim / h
-        
-        return self.vqgan.encode(torch.concat((flow, torch.zeros_like(flow[:, 0:1, :, :])), dim=1))[-1][-1]
+        flow = torch.nn.functional.interpolate(flow_gt, size=(self.vq_dim, self.vq_dim), mode='bilinear', align_corners=True)
+        flow[:, 0, :, :] = flow[:, 0, :, :] / w
+        flow[:, 1, :, :] = flow[:, 1, :, :] / h
+        # in normalized space
+        flow_dir = torch.nn.functional.normalize(flow, p=2, dim=1)
+        flow_dir = torch.concat((flow_dir, torch.zeros_like(flow_dir[:, :1])), dim=1)
+        flow_mag = torch.norm(flow, p=2, dim=1, keepdim=True).repeat(1, 3, 1, 1)
+        flow_mag = torch.pow(torch.abs(flow_mag), 0.5) / 0.5 * torch.sign(flow_mag)
+        return self.vqgan.encode(flow_dir)[-1][-1], self.vqgan.encode(flow_mag)[-1][-1]
 
     def _encode(self, x):
         feats = []
@@ -123,12 +127,16 @@ class VQFlow(BaseModule):
                 feats.append([q])
         return feats
 
-    def decode_flow(self, q, bhwc, hw):
-        z_q = self.vqgan.quantize.get_codebook_entry(q, shape=bhwc)
-        q = self.vqgan.decode(z_q)
-        flow = flow_scale * torch.nn.functional.interpolate(q[:, :2, :, :], size=hw, mode='bilinear', align_corners=True)
-        flow[:, 0, :, :] = flow[:, 0, :, :] * hw[1] / self.vq_dim
-        flow[:, 1, :, :] = flow[:, 1, :, :] * hw[0] / self.vq_dim
+    def decode_flow(self, q_dir, q_mag, bhwc, hw):
+        z_q_dir = self.vqgan.quantize.get_codebook_entry(q_dir, shape=bhwc)
+        z_q_mag = self.vqgan.quantize.get_codebook_entry(q_mag, shape=bhwc)
+        q_dir = self.vqgan.decode(z_q_dir)
+        q_mag = self.vqgan.decode(z_q_mag)
+        q_mag = torch.pow(torch.abs(q_mag) * 0.5, 2) * torch.sign(q_mag)
+        flow = q_dir[:, :2] * q_mag[:, -1:]
+        flow = torch.nn.functional.interpolate(flow[:, :2, :, :], size=hw, mode='bilinear', align_corners=True)
+        flow[:, 0, :, :] = flow[:, 0, :, :] * hw[1]
+        flow[:, 1, :, :] = flow[:, 1, :, :] * hw[0]
         return flow
 
     def forward(self, img1, img2):
@@ -153,14 +161,15 @@ class VQFlow(BaseModule):
           
         q = self.final_layer(feats[-1][0])
         q = self.unpatchify(q) 
-        latents = q
-        
+        q_dir, q_mag = q[:, :self.n_embed, :, :], q[:, self.n_embed:, :, :]
+        latents = (q_dir, q_mag) 
         if self.training:
-            return {'latents': latents}
+            return {'latents': (q_dir, q_mag)}
         else:
             with torch.no_grad():
                 bhwc = [q.shape[0], q.shape[2], q.shape[3], self.embed_dim]
-                q = torch.argmax(q, dim=1)
-                flow = self.decode_flow(q, bhwc, hw)
+                q_dir = torch.argmax(q_dir, dim=1)
+                q_mag = torch.argmax(q_mag, dim=1)
+                flow = self.decode_flow(q_dir, q_mag, bhwc, hw)
                 
             return {'latents': latents, 'flow_preds': flow, "flow_upsampled": flow}

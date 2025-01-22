@@ -88,6 +88,9 @@ class VQLoss(nn.Module):
         }
 
     def forward(self, latents, gt_latents, my_mask, **kwargs):
+        return (self.loss(latents[0], gt_latents[0], my_mask, **kwargs) + self.loss(latents[1], gt_latents[1], my_mask, **kwargs)) * 0.5
+
+    def loss(self, latents, gt_latents, my_mask, **kwargs):
         flow_preds = latents
         flow_gt = gt_latents.reshape(flow_preds.shape[0], flow_preds.shape[2], flow_preds.shape[3])
         nan_mask = (~torch.isnan(flow_gt)).float()
