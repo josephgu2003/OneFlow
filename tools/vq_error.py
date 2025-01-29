@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 import torchshow
 
-log_folder = 'vq_new'
+log_folder = 'vq_reparam'
 
 def vq_error(model, dataloader, device, metric_fn, flow_scale=1.0, pad_divisor=1):
     """
@@ -68,11 +68,9 @@ def vq_error(model, dataloader, device, metric_fn, flow_scale=1.0, pad_divisor=1
 
             start_time = time.time()
 
-            logits, magits = model.model.encode_flow(target["flow_gt"])
-            logits = logits.reshape(img1.shape[0], 16, 16)
-            magits = magits.reshape(img1.shape[0], 16, 16)
-            bhwc = [logits.shape[0], logits.shape[1], logits.shape[2], model.model.embed_dim]
-            output = model.model.decode_flow(logits, magits, bhwc, hw=img1.shape[-2:])
+            logits = model.model.encode_flow(target["flow_gt"])
+            bhwc = [logits[0].shape[0], logits[0].shape[1], logits[0].shape[2], model.model.embed_dim]
+            output = model.model.decode_flow(logits, bhwc, hw=img1.shape[-2:])
 
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
@@ -144,7 +142,7 @@ if __name__ == "__main__":
     device= 'cuda:0' 
     model = model.to(device)
     model.eval()
-    vq_error(model, kitti_data_loader, device,metric_fn=endpointerror)
+    # vq_error(model, kitti_data_loader, device,metric_fn=endpointerror)
 
     dataloader_creator = DataloaderCreator(
         batch_size=8, shuffle=False, num_workers=4, pin_memory=True
@@ -184,6 +182,6 @@ if __name__ == "__main__":
 
     sintel = dataloader_creator.get_dataloader()
 
-    vq_error(model, sintel, device,metric_fn=endpointerror)
+    # vq_error(model, sintel, device,metric_fn=endpointerror)
 
     print("Evaluation Complete!!")

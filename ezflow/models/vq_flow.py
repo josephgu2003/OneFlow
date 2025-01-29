@@ -16,7 +16,9 @@ from ezflow.decoder.dpt import DPTHead
 
 def simple_interpolate(x, size):
     return torch.nn.functional.interpolate(x, size=size, mode='bilinear')
-flow_scale = 40.0
+flow_scale = 0.1
+base = 1
+iters = 4
 
 @MODEL_REGISTRY.register()
 class VQFlow(BaseModule):
@@ -87,15 +89,24 @@ class VQFlow(BaseModule):
     def encode_flow(self, flow_gt): 
         self.vqgan.eval()
         h, w = flow_gt.size(2), flow_gt.size(3)
+        flow_gt = torch.concat((flow_gt, 0 * flow_gt[:, :1, :, :]), dim=1)
         flow = torch.nn.functional.interpolate(flow_gt, size=(self.vq_dim, self.vq_dim), mode='bilinear', align_corners=True)
-        flow[:, 0, :, :] = flow[:, 0, :, :] / w
-        flow[:, 1, :, :] = flow[:, 1, :, :] / h
-        # in normalized space
-        flow_dir = torch.nn.functional.normalize(flow, p=2, dim=1)
-        flow_dir = torch.concat((flow_dir, torch.zeros_like(flow_dir[:, :1])), dim=1)
-        flow_mag = torch.norm(flow, p=2, dim=1, keepdim=True).repeat(1, 3, 1, 1)
-        flow_mag = torch.pow(torch.abs(flow_mag), 0.5) / 0.5 * torch.sign(flow_mag)
-        return self.vqgan.encode(flow_dir)[-1][-1], self.vqgan.encode(flow_mag)[-1][-1]
+        flow[:, 0, :, :] = flow[:, 0, :, :] / w / flow_scale
+        flow[:, 1, :, :] = flow[:, 1, :, :] / h / flow_scale
+       
+        logit_stack = [] 
+        for i in range(iters):
+            # in normalized space
+            logits = self.vqgan.encode(flow)[-1][-1]
+            logits = logits.reshape(flow_gt.shape[0], 16, 16)
+            logit_stack.append(logits)
+            bhwc = [logits.shape[0], logits.shape[1], logits.shape[2], self.embed_dim]
+            z_q = self.vqgan.quantize.get_codebook_entry(logits, shape=bhwc)
+            new_flow = self.vqgan.decode(z_q)
+            flow = flow - new_flow
+            flow *= (base ** i)
+            flow[:, -1, :, :] *= 0
+        return logit_stack
 
     def _encode(self, x):
         feats = []
@@ -127,14 +138,19 @@ class VQFlow(BaseModule):
                 feats.append([q])
         return feats
 
-    def decode_flow(self, q_dir, q_mag, bhwc, hw):
-        z_q_dir = self.vqgan.quantize.get_codebook_entry(q_dir, shape=bhwc)
-        z_q_mag = self.vqgan.quantize.get_codebook_entry(q_mag, shape=bhwc)
-        q_dir = self.vqgan.decode(z_q_dir)
-        q_mag = self.vqgan.decode(z_q_mag)
-        q_mag = torch.pow(torch.abs(q_mag) * 0.5, 2) * torch.sign(q_mag)
-        flow = q_dir[:, :2] * q_mag[:, -1:]
-        flow = torch.nn.functional.interpolate(flow[:, :2, :, :], size=hw, mode='bilinear', align_corners=True)
+    def decode_flow(self, logit_stack, bhwc, hw):
+        flow = None
+        
+        for i in range(iters):
+            logits = logit_stack[i]
+            z_q = self.vqgan.quantize.get_codebook_entry(logits, shape=bhwc)
+            new_flow = self.vqgan.decode(z_q) / (base ** i)
+            if flow is None:
+                flow = new_flow
+            else:
+                flow = flow + new_flow
+                
+        flow = torch.nn.functional.interpolate(flow[:, :2, :, :], size=hw, mode='bilinear', align_corners=True) * flow_scale
         flow[:, 0, :, :] = flow[:, 0, :, :] * hw[1]
         flow[:, 1, :, :] = flow[:, 1, :, :] * hw[0]
         return flow
