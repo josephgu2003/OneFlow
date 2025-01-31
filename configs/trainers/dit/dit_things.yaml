@@ -1,0 +1,64 @@
+_BASE_: "../_base_/things_baseline.yaml"
+FREEZE_BATCH_NORM: True
+DATA:
+  BATCH_SIZE: 16
+  NUM_WORKERS: 24
+  NORM_PARAMS: {"use": True, "mean":[127.5, 127.5, 127.5], "std":[127.5, 127.5, 127.5]}
+  APPEND_VALID_MASK: True
+  TRAIN_DATASET:
+    FlyingThings3DClean: &TRAIN_DS_CONFIG
+      ROOT_DIR: "/work/vig/Datasets/SceneFlow/FlyingThings3D"
+      AUGMENTATION:
+        USE: True
+        PARAMS:
+          color_aug_params: {"enabled": True}
+          eraser_aug_params: {"enabled": True}
+          noise_aug_params: {"enabled": True}
+          flip_aug_params: {"enabled": True}
+          spatial_aug_params: {"enabled": True}
+          advanced_spatial_aug_params: {"enabled": False}
+      CROP: 
+        USE: True
+        SIZE: [384, 384]
+        TYPE: "random"
+    FlyingThings3DFinal: *TRAIN_DS_CONFIG
+  VAL_DATASET:
+    FlyingThings3DClean: &VAL_DS_CONFIG
+      ROOT_DIR: "/work/vig/Datasets/SceneFlow/FlyingThings3D"
+      PADDING: 1
+      CROP: 
+        USE: True
+        SIZE: [384, 384]
+        TYPE: "center"
+    FlyingThings3DFinal: *VAL_DS_CONFIG
+SCHEDULER:
+  USE: True
+  NAME: OneCycleLR
+  PARAMS:
+    max_lr: 0.0001
+    total_steps: 100100
+    pct_start: 0.05
+    cycle_momentum: False
+    anneal_strategy: linear
+    div_factor: 250
+CRITERION:
+  CUSTOM: True
+  NAME: MultiScaleLoss
+  PARAMS:
+    norm: "l1" 
+    weights: [1.0]
+    average: "mean"
+    resize_flow: "upsample"
+EPOCHS: null
+NUM_STEPS: 100100
+LOG_DIR: "./logs"
+CKPT_DIR: "./ckpts"
+LOG_ITERATIONS_INTERVAL: 100
+CKPT_INTERVAL: 5000
+VALIDATE_INTERVAL: 3000
+VALIDATE_ON: metric
+DISTRIBUTED:
+  USE: True
+  WORLD_SIZE: 2
+  SYNC_BATCH_NORM: True
+MIXED_PRECISION: True
