@@ -31,9 +31,9 @@ def main(args):
 
     # Build model
     if args.custom_cfg == 'None':
-        model = build_model(args.model, default=True)
+        model = build_model(args.model, default=True, weights_path=args.weights_path)
     else:
-        model = build_model(args.model, cfg_path=args.custom_cfg, custom_cfg=True, default=False)
+        model = build_model(args.model, cfg_path=args.custom_cfg, custom_cfg=True, default=False, weights_path=args.weights_path)
         
 
     # Create trainer
@@ -136,6 +136,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--custom_cfg",
+        type=str,
+        default="None",
+    )
+    parser.add_argument(
+        "--weights_path",
         type=str,
         default="None",
     )
