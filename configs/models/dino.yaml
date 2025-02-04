@@ -8,3 +8,4 @@ SCALER: 1
 BLOCK_CLASS: DecoderBlock
 ENCODER_CONCAT: True
 REPARAM: False
+INIT: pretrained

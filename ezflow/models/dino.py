@@ -8,6 +8,7 @@ from ezflow.encoder.dinov2.native_attention import NativeAttention
 from ezflow.encoder.dinov2.vision_transformer import DinoVisionTransformer, vit_small
 from ezflow.models.build import MODEL_REGISTRY
 from ezflow.models.dit import get_2d_sincos_pos_embed
+from ezflow.models.structured_init import advanced_init_weights
 from ezflow.modules.decoder import DecoderBlock, ConcatenateDecoderBlock
 from ezflow.modules.base_module import BaseModule 
 from ezflow.utils.invert_flow import reparameterize
@@ -40,8 +41,13 @@ class Dino(BaseModule):
             ])
             self.out_indices = list([i for i in range(0, cfg.DECODER_BLOCKS, cfg.DECODER_BLOCKS // 4)])
         self.init_weights()
-        self.vits16 = dinov2_vits14_reg(block_fn=partial(Block, attn_class=NativeAttention))
+        self.vits16 = dinov2_vits14_reg(block_fn=partial(Block, attn_class=NativeAttention), pretrained=cfg.INIT == 'pretrained')
         
+        if cfg.INIT == 'scratch':
+            print("Init DINOv2 from scratch!")
+        else:
+            advanced_init_weights(self, cfg.INIT)
+            
         self.encoder_concat = cfg.ENCODER_CONCAT 
         self.reparam = cfg.REPARAM
       
