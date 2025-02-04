@@ -1,6 +1,32 @@
 
 import torch
 
+def colorize_mag(channel):
+    c1 = torch.zeros_like(channel)
+    c1[:, 0] += 0.5
+    c1[:, 2] += 0.0
+    c2 = torch.zeros_like(channel)
+    c2[:, 1] += 0.0
+    c2[:, 2] -= 0.0
+    mag = channel[:, 0:1] / 50
+    c3 = c1 * mag + c2 * (1 - mag)
+    return c3 
+
+def decolorize_mag(channel):
+    mag = channel[:, 0:1] / 0.5
+    return mag * 50
+    
+def pad_flow(flow):
+    return torch.concat((flow, torch.zeros_like(flow[:, :1])), dim=1)
+
+def unpad_flow(flow):
+    return flow[:, :2]
+
+def decompose_flow(flow):
+    dir = torch.nn.functional.normalize(flow, p=2, dim=1)
+    mag = torch.norm(flow, p=2, dim=1, keepdim=True)
+    return pad_flow(dir), mag.repeat(1, 3, 1, 1)
+    
 def reparameterize(x, hw):
     h, w = hw[0], hw[1]
     x = torch.nn.functional.interpolate(x, size=hw, mode='bilinear', align_corners=True)
