@@ -5,6 +5,8 @@ import torch.nn as nn
 from torch.nn.init import trunc_normal_
 import torch.optim as optim
 
+from ezflow.encoder.dinov2.vision_transformer import DinoVisionTransformer
+
 def get_ortho_like(dim, heads, alpha, beta, sign=1, dist='uniform'):
     if dist == 'normal':
         A = alpha * np.random.normal(size=(dim,dim)) / (dim**0.5) + sign * beta * np.eye(dim)
@@ -75,7 +77,7 @@ def impulse_init(heads,img_size,att_rank,ff,scale=1.0,spatial_pe=None,norm=1):
     return net.weights_Q.detach().cpu(),net.weights_K.detach().cpu()
 
 
-def advanced_init_weights(self, mode) -> None:
+def advanced_init_weights(self: DinoVisionTransformer, mode) -> None:
     # this fn left here for compat with downstream users
     # init_weights_vit_timm(m)
     # modified this funcition as our initialization
@@ -85,8 +87,8 @@ def advanced_init_weights(self, mode) -> None:
         beta = float(beta)
         print(f'using mimetic init with alpha={alpha}, beta={beta}')
         head_dim = self.embed_dim // self.num_heads
-        for i in range(self.depth):
-            d = i / float(self.depth - 1)
+        for i in range(self.n_blocks):
+            d = i / float(self.n_blocks - 1)
 
             for h in range(self.num_heads):
                 Q, K = get_ortho_like(self.embed_dim, -float('inf'), alpha, beta, 1)

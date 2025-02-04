@@ -46,7 +46,7 @@ class Dino(BaseModule):
         if cfg.INIT == 'scratch':
             print("Init DINOv2 from scratch!")
         else:
-            advanced_init_weights(self, cfg.INIT)
+            advanced_init_weights(self.vits16, cfg.INIT)
             
         self.encoder_concat = cfg.ENCODER_CONCAT 
         self.reparam = cfg.REPARAM

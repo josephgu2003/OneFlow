@@ -142,7 +142,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--weights_path",
         type=str,
-        default="None",
+        default=None,
     )
 
     args = parser.parse_args()
