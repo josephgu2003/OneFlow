@@ -1,6 +1,29 @@
 
 import torch
 
+def segment_mag(mag, segments=2, interval=50, divisor=2):
+    mags = []
+    for i in range(segments):
+        threshold = i * interval
+        m = torch.relu(mag - threshold) / interval
+       
+        if i != segments - 1:
+            m = torch.clamp(m, 0, 1)
+        m = m / divisor
+        mags.append(m)
+    return mags
+
+def unsegment_mag(mags, interval=50, divisor=2):
+    return torch.sum(torch.stack(mags), dim=0) * interval * divisor 
+
+def encode_mag_segmentwise(mag):
+    segments = segment_mag(mag[:, :1])
+    segments.append(torch.zeros_like(mag[:, :1]))
+    return torch.concat(segments, dim=1)
+
+def decode_mag_segmentwise(mags):
+    return unsegment_mag([mags[:, :1], mags[:, 1:2]])
+    
 def colorize_mag(channel):
     c1 = torch.zeros_like(channel)
     c1[:, 0] += 0.5

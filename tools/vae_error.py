@@ -16,7 +16,7 @@ from tqdm import tqdm
 from diffusers.models import AutoencoderKL
 import torchshow
 
-from ezflow.utils.invert_flow import colorize_mag, decolorize_mag, decompose_flow, pad_flow, unpad_flow
+from ezflow.utils.invert_flow import colorize_mag, decode_mag_segmentwise, decolorize_mag, decompose_flow, encode_mag_segmentwise, pad_flow, unpad_flow
 
 log_folder = 'vq_new'
 
@@ -140,17 +140,14 @@ def vq_error(model: AutoencoderKL, dataloader, device, metric_fn, flow_scale=1.0
 
             start_time = time.time()
             
-        #    flow_gt = pad_flow(target['flow_gt']) /40 
-         #   output = unpad_flow(model(flow_gt).sample) * 40
             dir, mag = decompose_flow(target['flow_gt'])
             mag0 = mag
-            dir0 = dir
             mags.append(mag.flatten().cpu().numpy())
-            mag = mag / 40
-          #  mag = colorize_mag(mag)
+            mag = encode_mag_segmentwise(mag)
+            
             dir = model(dir).sample
-            mag = model(mag).sample * 40
-        #    mag = decolorize_mag(model(mag).sample)
+            magits = model(mag).sample
+            mag = decode_mag_segmentwise(magits)
             output = dir * mag
             output = output[:, :2]
          
