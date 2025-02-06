@@ -1,28 +1,67 @@
 
 import torch
 
-def segment_mag(mag, segments=2, interval=50, divisor=2):
+def encode_digits(mag):
+    mag = mag.to(torch.int32)[:, :1]
+
+    hunds = torch.floor(mag / 100)
+    mag = mag - hunds * 100
+
+    tens = torch.floor(mag / 10)
+    mag = mag - tens * 10
+
+    ones = torch.floor(mag)
+
+    hunds = (hunds - 5) / 10
+    tens = (tens - 5) / 10
+    ones = (ones - 5) / 10
+    return torch.concat((hunds, tens, ones), dim=1)
+
+def decode_digits(digits):
+    digits = digits * 10 + 5
+    digits = torch.round(digits)
+    return digits[:, :1] * 100 + digits[:, 1:2] * 10 + digits[:, 2:3] * 1
+
+def encode_polar(mag):
+    mag = torch.pow(mag[:, :1], 0.5)
+    mag = mag / 20 * 2 * torch.pi
+    sin = torch.sin(mag)
+    cos = torch.cos(mag)
+    return torch.concat((sin, cos, torch.zeros_like(cos)), dim=1)
+
+def decode_polar(polar):
+    mag = torch.square(torch.atan2(polar[:, 0:1], polar[:, 1:2])) / (2 * torch.pi) * 20
+    return mag
+
+divisors = [20, 20, 100]
+def segment_mag(mag, segments=3):
     mags = []
+    intervals = [0, 10, 20]
     for i in range(segments):
-        threshold = i * interval
-        m = torch.relu(mag - threshold) / interval
-       
+        threshold = intervals[i]
+        m = torch.relu(mag - threshold)
+        
         if i != segments - 1:
-            m = torch.clamp(m, 0, 1)
-        m = m / divisor
-        mags.append(m)
+            m = torch.clamp(m, 0, intervals[i+1]-intervals[i])
+
+        mags.append(m / divisors[i])
     return mags
 
-def unsegment_mag(mags, interval=50, divisor=2):
-    return torch.sum(torch.stack(mags), dim=0) * interval * divisor 
+def unsegment_mag(mags):
+    for mag in mags[1:]:
+        mag[torch.abs(mag) < 0.03] = 0
+ 
+    return (mags[0] * divisors[0] + mags[1] * divisors[1] + mags[2] * divisors[2])
 
 def encode_mag_segmentwise(mag):
     segments = segment_mag(mag[:, :1])
-    segments.append(torch.zeros_like(mag[:, :1]))
+    
+    if len(segments) == 2:
+        segments.append(torch.zeros_like(mag[:, :1]))
     return torch.concat(segments, dim=1)
 
 def decode_mag_segmentwise(mags):
-    return unsegment_mag([mags[:, :1], mags[:, 1:2]])
+    return unsegment_mag([mags[:, :1], mags[:, 1:2], mags[:, 2:3]])
     
 def colorize_mag(channel):
     c1 = torch.zeros_like(channel)
