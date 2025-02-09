@@ -23,20 +23,20 @@ def decode_digits(digits):
     return digits[:, :1] * 100 + digits[:, 1:2] * 10 + digits[:, 2:3] * 1
 
 def encode_polar(mag):
-    mag = torch.pow(mag[:, :1], 0.5)
+    mag = torch.pow(mag[:, :1], 0.7)
     mag = mag / 20 * 2 * torch.pi
     sin = torch.sin(mag)
     cos = torch.cos(mag)
     return torch.concat((sin, cos, torch.zeros_like(cos)), dim=1)
 
 def decode_polar(polar):
-    mag = torch.square(torch.atan2(polar[:, 0:1], polar[:, 1:2])) / (2 * torch.pi) * 20
+    mag = torch.pow(torch.atan2(polar[:, 0:1], polar[:, 1:2]), 1 / 0.7) / (2 * torch.pi) * 20
     return mag
 
-divisors = [20, 20, 100]
+divisors = [50, 50, 100]
 def segment_mag(mag, segments=3):
     mags = []
-    intervals = [0, 10, 20]
+    intervals = [0, 50, 100]
     for i in range(segments):
         threshold = intervals[i]
         m = torch.relu(mag - threshold)
@@ -48,10 +48,10 @@ def segment_mag(mag, segments=3):
     return mags
 
 def unsegment_mag(mags):
-    for mag in mags[1:]:
-        mag[torch.abs(mag) < 0.03] = 0
- 
-    return (mags[0] * divisors[0] + mags[1] * divisors[1] + mags[2] * divisors[2])
+    mags = [mag for mag in mags]
+    mags[1][mags[1] < 0.05] = 0
+    mags[2][mags[2] < 0.05] = 0
+    return (mags[0] * divisors[0] + mags[1] * divisors[1] * 1 + mags[2] * divisors[2] * 1)
 
 def encode_mag_segmentwise(mag):
     segments = segment_mag(mag[:, :1])
@@ -62,7 +62,35 @@ def encode_mag_segmentwise(mag):
 
 def decode_mag_segmentwise(mags):
     return unsegment_mag([mags[:, :1], mags[:, 1:2], mags[:, 2:3]])
-    
+ 
+means = [0, 50, 100]
+sds = [100, 100, 100]
+
+def gaussians_mag(mag):
+    mags = []
+
+    for i in range(3):
+        mu = means[i]
+        sd = sds[i]
+        m = (mag - mu) / sd
+        mags.append(m)
+
+    return mags
+    return torch.concat(mags, dim=1)
+
+def ungaussians_mag(mags):
+ 
+    es1 = mags[0] * sds[0] + means[0]
+    es2 = mags[1] * sds[1] + means[1]
+    es3 = mags[2] * sds[2] + means[2]
+
+
+    mags = torch.concat([mags[0][:, :1], mags[1][:, :1], mags[2][:, :1]], dim=1)
+    mags = torch.abs(mags)
+    one_hot = torch.zeros_like(es1)
+    one_hot.scatter_(1, mags.argmin(dim=1, keepdim=True), 1) 
+    return es1 * one_hot[:, :1] + es2 * one_hot[:, 1:2] + es3 * one_hot[:, 2:3]
+   
 def colorize_mag(channel):
     c1 = torch.zeros_like(channel)
     c1[:, 0] += 0.5
