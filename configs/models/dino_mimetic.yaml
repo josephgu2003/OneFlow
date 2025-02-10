@@ -1,0 +1,11 @@
+NAME: Dino
+MIXED_PRECISION: False
+HIDDEN_SIZE: 384
+NUM_HEADS: 8
+DECODER_BLOCKS: 0
+DINO_PATH: /home/gu.jo/.cache/torch/hub/checkpoints/dinov2_vits14_reg4_pretrain.pth
+SCALER: 1
+BLOCK_CLASS: DecoderBlock
+ENCODER_CONCAT: True
+REPARAM: False
+INIT: mimetic0.7_0.7
